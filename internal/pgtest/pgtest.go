@@ -107,18 +107,43 @@ func New(t testing.TB) *DB {
 	}
 	t.Cleanup(func() {
 		mod.Close()
-		_, _ = core.ExecContext(context.Background(), `DROP SCHEMA `+schema+` CASCADE`)
+		_ = serial(context.Background(), core, func(c *sql.Conn) error {
+			_, err := c.ExecContext(context.Background(), `DROP SCHEMA `+schema+` CASCADE`)
+			return err
+		})
 	})
 	names, bodies, err := pkgfiles.Migrations()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, n := range names {
-		if _, err := mod.ExecContext(ctx, bodies[n]); err != nil {
-			t.Fatalf("migration %s: %v", n, err)
+	err = serial(ctx, mod, func(c *sql.Conn) error {
+		for _, n := range names {
+			if _, err := c.ExecContext(ctx, bodies[n]); err != nil {
+				return fmt.Errorf("migration %s: %w", n, err)
+			}
 		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 	return &DB{Module: mod, Core: core, Schema: schema}
+}
+
+// serial runs f on one connection holding the schema lock: creating and dropping the
+// module's foreign keys locks the shared core tables, so test packages running at the
+// same time take turns rather than deadlock.
+func serial(ctx context.Context, db *sql.DB, f func(*sql.Conn) error) error {
+	c, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	if _, err := c.ExecContext(ctx, `SELECT pg_advisory_lock(424243)`); err != nil {
+		return err
+	}
+	defer c.ExecContext(context.Background(), `SELECT pg_advisory_unlock(424243)`)
+	return f(c)
 }
 
 // Record inserts a core record id into the stand-in core table.

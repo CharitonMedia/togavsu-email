@@ -197,6 +197,7 @@ func (s *Sender) Send(ctx context.Context, v Viewer, c Compose) (Result, error) 
 	}
 	var atts []Attachment
 	type fileVer struct{ file, version string }
+	inMatter := map[string]string{}
 	var used []fileVer
 	total := 0
 	for _, id := range c.FileIDs {
@@ -219,6 +220,7 @@ func (s *Sender) Send(ctx context.Context, v Viewer, c Compose) (Result, error) 
 			if ver.ID == *f.CurrentVersionID {
 				mt = ver.MediaType
 				total += int(ver.SizeBytes)
+				inMatter[ver.SHA256] = id
 			}
 		}
 		if total > MaxAttachments {
@@ -278,7 +280,7 @@ func (s *Sender) Send(ctx context.Context, v Viewer, c Compose) (Result, error) 
 		return res, nil
 	}
 	// The record is written only after a confirmed send.
-	if err := s.fileSent(ctx, v, acct, o, raw, c.MatterID); err != nil {
+	if err := s.fileSent(ctx, v, acct, o, raw, c.MatterID, inMatter); err != nil {
 		_ = s.Store.SetOutboundStatus(ctx, o.ID, "record_failed")
 		return res, nil
 	}
@@ -307,7 +309,7 @@ func (s *Sender) deliver(ctx context.Context, a store.Account, raw []byte, env p
 
 // fileSent stores the sent copy as an outbound mail record and files it to the matter
 // as the sender. When the filing fails the copy waits in the queue.
-func (s *Sender) fileSent(ctx context.Context, v Viewer, a store.Account, o store.Outbound, raw []byte, matterID string) error {
+func (s *Sender) fileSent(ctx context.Context, v Viewer, a store.Account, o store.Outbound, raw []byte, matterID string, existing map[string]string) error {
 	pm, err := mailparse.Parse(raw)
 	if err != nil {
 		return err
@@ -324,7 +326,7 @@ func (s *Sender) fileSent(ctx context.Context, v Viewer, a store.Account, o stor
 		return err
 	}
 	_, err = s.Filer.File(ctx, filing.Request{Message: stored, Account: a, MatterID: matterID, How: "sent", Auth: coreapi.Viewer(v.Token),
-		FiledBy: v.UserID, Raw: raw, SkipAfterFile: true})
+		FiledBy: v.UserID, Raw: raw, SkipAfterFile: true, Existing: existing})
 	if err != nil && !errors.Is(err, filing.ErrDuplicate) {
 		_ = s.Store.SetMatches(ctx, m.ID, []store.Match{{MatterID: matterID, Via: "thread"}})
 		_ = s.Store.SetMessageStatus(ctx, m.ID, "unfiled", "sent_copy_not_filed", err.Error())

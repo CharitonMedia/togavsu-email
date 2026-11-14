@@ -63,6 +63,10 @@ type Request struct {
 	Raw []byte
 	// SkipAfterFile leaves the provider alone (a sent copy built here).
 	SkipAfterFile bool
+	// Existing maps an attachment's SHA-256 to the matter file it already is (a sent
+	// copy's attachments came from the matter): the HTML copy links to that file and
+	// nothing is uploaded again.
+	Existing map[string]string
 }
 
 // File runs the filing. A message already filed returns its filing.
@@ -149,15 +153,19 @@ func (f *Filer) File(ctx context.Context, r Request) (store.Filing, error) {
 	var names []string
 	if parsed != nil {
 		for _, p := range parsed.Attachments() {
-			pk := fmt.Sprintf("%s-part-%d", key, p.Index)
-			af, err := f.Core.PublishFile(ctx, r.Auth, pk, r.MatterID, p.Filename, p.MediaType, p.SHA256, p.Data, origin, r.AttorneyOnly)
-			if err != nil {
-				return store.Filing{}, fmt.Errorf("filing attachment %s: %w", p.Filename, err)
+			afID, ok := r.Existing[p.SHA256]
+			if !ok {
+				pk := fmt.Sprintf("%s-part-%d", key, p.Index)
+				af, err := f.Core.PublishFile(ctx, r.Auth, pk, r.MatterID, p.Filename, p.MediaType, p.SHA256, p.Data, origin, r.AttorneyOnly)
+				if err != nil {
+					return store.Filing{}, fmt.Errorf("filing attachment %s: %w", p.Filename, err)
+				}
+				afID = af.ID
 			}
-			if err := f.Store.SetPartFile(ctx, m.ID, p.Index, af.ID); err != nil {
+			if err := f.Store.SetPartFile(ctx, m.ID, p.Index, afID); err != nil {
 				return store.Filing{}, err
 			}
-			if err := f.Core.LinkAttachment(ctx, r.Auth, fmt.Sprintf("%s-link-%d", key, p.Index), htmlFile.ID, af.ID); err != nil {
+			if err := f.Core.LinkAttachment(ctx, r.Auth, fmt.Sprintf("%s-link-%d", key, p.Index), htmlFile.ID, afID); err != nil {
 				return store.Filing{}, fmt.Errorf("linking attachment %s: %w", p.Filename, err)
 			}
 			names = append(names, p.Filename)
