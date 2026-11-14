@@ -1,0 +1,335 @@
+# Email: reads, sends and files the firm's mail (togavsu-initial-modules-prd.md section 7).
+id: email
+name: Email
+version: "1.0.0"
+author: Chariton Media
+homepage: https://github.com/CharitonMedia/togavsu-email
+license: Same as Togavsu
+price: Free
+container:
+  image: ghcr.io/charitonmedia/togavsu-email
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  port: 8080
+  events: /events
+  system_mail: /system-mail
+device_connect: /outlook-addin/connected
+permissions:
+  - scope: matters:read
+    reason: Match mail to matters, list matters in the pickers and show a matter's mail.
+  - scope: contacts:read
+    reason: Find the contact behind an address and offer recipients from a matter's parties.
+  - scope: notes:write
+    reason: Record each filed or sent message as a note on its matter.
+  - scope: files:read
+    reason: Attach matter files to outgoing mail and open filed copies.
+  - scope: files:write
+    reason: Store filed messages and their attachments as the matter's files and link attachments to their message.
+  - scope: events:read
+    reason: Re-match unfiled mail when matters and contacts change.
+  - scope: notifications:write
+    reason: Tell the right people about unfiled mail and failing accounts.
+  - scope: module_secrets:write
+    reason: Keep mailbox passwords and sign-in tokens sealed by the core.
+  - scope: ai:use
+    required: false
+    reason: Pick the matter for a court notice the rules can't place. Declined, those notices go to the queue.
+  - scope: modules:read
+    required: false
+    reason: Sign the Outlook add-in in as the person using it. Declined, the add-in is unavailable.
+  - scope: mail:system
+    required: false
+    reason: Deliver the core's system mail through the firm's mail. Declined, the core keeps sending system mail by SMTP.
+ai_tasks:
+  - id: court_notice_pick
+    description: Choose the matter a court notice belongs to from the candidates given, or none.
+widgets:
+  - id: inbox
+    title: Inbox
+    path: /widget/inbox
+    size:
+      w: 4
+      h: 3
+    sizes:
+      - w: 4
+        h: 3
+      - w: 6
+        h: 4
+    roles: [admin, attorney, staff]
+    target:
+      tab: inbox
+      params: [folder]
+  - id: unfiled
+    title: Unfiled email
+    path: /widget/unfiled
+    size:
+      w: 4
+      h: 2
+    sizes:
+      - w: 4
+        h: 2
+      - w: 6
+        h: 3
+    roles: [admin, attorney, staff]
+    target:
+      tab: unfiled
+      params: [account_id]
+tabs:
+  - id: inbox
+    title: Mail
+    placement: home
+    path: /inbox
+  - id: unfiled
+    title: Unfiled email
+    placement: home
+    path: /unfiled
+  - id: accounts
+    title: Mail accounts
+    placement: home
+    path: /accounts
+  - id: matter
+    title: Mail
+    placement: matter
+    path: /matter
+matter_items:
+  - id: recent-mail
+    kind: panel
+    title: Recent mail
+    path: /matter/recent
+  - id: email-client
+    kind: action
+    title: Email the client
+    path: /compose
+sidebar:
+  - id: mail
+    title: Mail
+    path: /inbox
+    section: communications
+    icon: mail
+    order: 300
+  - id: unfiled
+    title: Unfiled email
+    path: /unfiled
+    section: communications
+    icon: inbox
+    order: 310
+    badge:
+      path: /badge/unfiled
+      tone: warning
+notifications:
+  - kind: account_problem
+    label: Mail account needs attention
+    default_channels: [in_app, email]
+  - kind: unfiled_mail
+    label: New unfiled email
+    default_channels: [in_app]
+quick_create:
+  - id: new-email
+    title: New email
+    path: /compose
+search_scopes:
+  - id: email
+    title: Email
+    path: /search
+events:
+  - matter.*
+  - contact.*
+data:
+  extends:
+    - name: mail
+      record: matter
+      table: matter_mail
+      key: matter_id
+      columns:
+        - name: filed_count
+        - name: last_mail_at
+        - name: last_inbound_at
+  views:
+    - name: filed_messages
+      record: matter
+      key: matter_id
+      columns:
+        - name: message_id
+        - name: subject
+        - name: direction
+        - name: sent_at
+        - name: html_file_id
+        - name: note_id
+settings:
+  - key: google_client_id
+    label: Google OAuth client id (for Gmail accounts)
+    type: string
+    default: ""
+  - key: google_client_secret
+    label: Google OAuth client secret
+    type: string
+    secret: true
+    default: ""
+  - key: microsoft_client_id
+    label: Microsoft app registration client id (for Microsoft 365 and Outlook.com accounts)
+    type: string
+    default: ""
+  - key: microsoft_client_secret
+    label: Microsoft app registration client secret
+    type: string
+    secret: true
+    default: ""
+  - key: microsoft_tenant
+    label: Microsoft tenant (organizations, common, consumers or a tenant id)
+    type: string
+    default: organizations
+  - key: firm_domains
+    label: Firm mail domains, comma-separated (empty means the connected accounts' domains)
+    type: string
+    default: ""
+  - key: poll_minutes
+    label: Minutes between syncs of each account
+    type: int
+    default: "5"
+  - key: backfill_days
+    label: Days back a newly connected account is read
+    type: int
+    default: "30"
+  - key: case_number_patterns
+    label: Court case number patterns, semicolon-separated, tried in order
+    type: string
+    default: \b(\d{2}[A-Z]{2,4}-[A-Z]{2,3}\d{4,8}(?:-\d{1,3})?)\b;\b((?:SC|ED|WD|SD)\d{4,6})\b
+  - key: court_ai_pick
+    label: Let the model pick among court notice candidates
+    type: bool
+    default: "true"
+  - key: summary_recipients
+    label: Filing summary recipients, comma-separated (empty sends no summary)
+    type: string
+    default: ""
+  - key: summary_interval_minutes
+    label: Least minutes between filing summaries
+    type: int
+    default: "60"
+  - key: sending_disabled
+    label: Record every send and deliver none (for staging copies)
+    type: bool
+    default: "false"
+help:
+  heading: Email
+  pages:
+    - id: overview
+      title: Email
+      keywords: [email, mail, inbox, filing, unfiled]
+      covers: [email.inbox, email.unfiled, /modules/email/tabs/inbox, /modules/email/tabs/matter]
+      body: |
+        The Email module connects the mail your firm already uses (Gmail, Microsoft 365,
+        Outlook.com or any IMAP/SMTP server), reads it, sends it and files it to matters.
+
+        - **Mail** (sidebar, Communications > Mail) shows your own Inbox and Sent folders.
+          Open a message to reply, reply all, forward, file it to a matter or mark it read.
+        - **Unfiled email** (sidebar, Communications > Unfiled email) lists the mail the
+          module could not place on its own. The count beside it is what is waiting for you.
+        - The **Inbox** widget on the home screen shows your unread count, your ten newest
+          messages and how many unfiled items you can act on. Click its title to open Mail.
+        - The **Unfiled email** widget shows the eight oldest unfiled items with their age
+          and the best suggestion. Click a row to file it.
+        - On a matter, the **Mail** tab lists every message filed to the matter, grouped by
+          thread, and the **Recent mail** panel shows the five newest.
+
+        Each filed message becomes a file on the matter (an HTML copy with its links kept),
+        each attachment becomes its own file linked to it, and one note records the filing.
+        Doc Tender then names and folders those files like any other arriving file.
+    - id: accounts
+      title: Connecting mail accounts
+      keywords: [gmail, microsoft, outlook, imap, smtp, account, connect]
+      covers: [/modules/email/tabs/accounts]
+      body: |
+        Open **Communications > Mail**, then the **Mail accounts** tab.
+
+        - **Connect Gmail** or **Connect Microsoft** opens the provider's sign-in page in its
+          own window. Sign in and allow access; the window closes and the account shows as
+          Connected. The admin enters the firm's Google and Microsoft app keys first, on
+          **Admin > Modules and marketplace > Email > Settings**.
+        - **Connect IMAP/SMTP** takes the server names, ports, security (TLS or STARTTLS),
+          the login and the password. The password goes straight to the core's sealed store.
+
+        Account roles:
+
+        - **Personal**: one person's mailbox. Anyone on staff can connect their own; the
+          admin can connect one for someone else. Filed mail gets a Filed label and stays.
+        - **Filing**: the firm's client mailbox (for example clients@). Mail is deleted from
+          the mailbox after a clean filing. Plus addressing (filing+2026-0042@) is on.
+        - **Court**: the e-filing notice mailbox. Filed notices are marked read and moved to
+          a Filed folder, never deleted, and the account never sends.
+
+        The admin sees every account's status and can pause or remove any account. Personal
+        mail is shown only to the person who owns the account.
+    - id: unfiled
+      title: The unfiled email queue
+      keywords: [unfiled, queue, defer, dismiss, file, retry]
+      covers: [email.unfiled, /modules/email/tabs/unfiled]
+      body: |
+        Open **Communications > Unfiled email**. Each row shows the account, sender,
+        subject, when it arrived, the attachment count, why it was not filed and the best
+        suggestion.
+
+        - **File** opens a preview beside a matter picker. Suggested matters come first;
+          search by matter name, number or client name. Attorneys and admins can tick
+          **Attorney only**.
+        - **Defer** moves the message to a Review-Later folder in the mailbox. Deferred rows
+          show under the **Deferred** filter, where **Restore** brings them back.
+        - **Defer all** defers every row in view after you confirm the count.
+        - **Dismiss** needs a reason. On a filing account it deletes the message; on a court
+          account it marks it read; on a personal account it leaves it alone.
+        - **Retry** reads an error row again.
+    - id: filing-rules
+      title: How mail is matched to matters
+      keywords: [rules, matching, case number, plus address, thread]
+      body: |
+        The module tries these steps in order and stops at the first one that decides:
+
+        1. **Already filed**: a message with the same Message-ID already on a matter is
+           marked a duplicate and filed nowhere else.
+        2. **Plus address** (filing accounts): mail to filing+2026-0042@ files to the matter
+           with that number or case number, or to the one open matter of a client with that
+           last name.
+        3. **Thread**: a reply to a message already filed goes to that message's matter
+           while the matter is open or on hold.
+        4. **Court notices** (court accounts): the full case number in the notice, checked
+           against the client's last name in the caption; failing that, the client's first
+           and last name in the caption; failing that, when it is turned on, the model picks
+           among matters whose client shares the caption's surname, or says none.
+        5. **Address** (filing and personal accounts): exactly one contact must hold the
+           sender's or recipient's address, and that contact must be a party on exactly one
+           open or on-hold matter. Firm addresses never count.
+
+        Anything else waits in the unfiled queue with the reason. Personal mail from someone
+        who is not a contact stays in your inbox. Unfiled mail is matched again every hour
+        and whenever a matter or contact changes.
+    - id: quick-email
+      title: Sending email
+      keywords: [compose, quick email, new email, reply, send]
+      covers: [email.new-email, email.email-client]
+      body: |
+        Use **New email** in the header's Quick create menu, or **Email the client** on a
+        matter, which fills in the matter and the primary client's address.
+
+        Enter To, and optionally Cc and Bcc, a subject and the message. Pick a matter to
+        file the sent copy there, and attach files from that matter (20 MB in all). The
+        message is sent from your own account, or the firm's default sending account.
+        A message with no valid To address or no text is not sent.
+    - id: outlook
+      title: The Outlook add-in
+      keywords: [outlook, add-in, office]
+      body: |
+        On the **Mail accounts** tab, the admin downloads **manifest.xml** and deploys it to
+        the firm's Microsoft 365 tenant (or sideloads it in Outlook).
+
+        In Outlook, open the add-in and choose **Sign in**. A Togavsu window asks you to
+        connect this device; approve it. While reading a message, the add-in suggests the
+        matter and offers matter and contact search; **File** files the message. While
+        writing a reply, **File sent copy to matter** files the copy you send.
+    - id: system-mail
+      title: Sending system mail through the firm's mail
+      keywords: [system mail, smtp, routing]
+      body: |
+        Togavsu's own mail (password resets, notices, invoices) normally goes by the SMTP
+        settings on the admin page. To send it through a connected account instead, mark
+        one account **System mail** on the Mail accounts tab, then turn on **Route system
+        mail through the email module** on **Admin > Mail**. If that account stops working,
+        the core sends by SMTP again.
