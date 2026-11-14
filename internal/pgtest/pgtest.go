@@ -16,8 +16,8 @@ import (
 	"strings"
 	"testing"
 
-	pkgfiles "github.com/CharitonMedia/togavsu-email/package"
 	"github.com/CharitonMedia/togavsu-email/internal/ids"
+	pkgfiles "github.com/CharitonMedia/togavsu-email/package"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 

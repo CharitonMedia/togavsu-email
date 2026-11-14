@@ -543,8 +543,8 @@ func (s *Store) messages(ctx context.Context, where string, args ...any) ([]Mess
 
 // QueueFilter selects queue rows.
 type QueueFilter struct {
-	Statuses   []string
-	AccountID  string
+	Statuses  []string
+	AccountID string
 	// Firm includes filing and court account rows.
 	Firm bool
 	// Owner includes that user's personal account rows.
