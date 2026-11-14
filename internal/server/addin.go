@@ -132,7 +132,7 @@ func (s *Server) addinSuggest(w http.ResponseWriter, r *http.Request, v Viewer) 
 }
 
 func (s *Server) addinMatters(w http.ResponseWriter, r *http.Request, v Viewer) error {
-	ms, err := s.Core.ListMatters(r.Context(), v.Auth(), r.URL.Query().Get("q"), 20)
+	ms, err := s.Core.ListMatters(r.Context(), v.Auth(), r.URL.Query().Get("q"), matterPickRows)
 	if err != nil {
 		return err
 	}
@@ -294,7 +294,8 @@ func (s *Server) addinManifest(w http.ResponseWriter, r *http.Request, v Viewer)
 // addinID is a stable add-in id for a firm's host, so a redeploy updates the add-in.
 func addinID(host string) string {
 	h := mailparse.Sum([]byte("togavsu-email-addin:" + host))
-	return h[0:8] + "-" + h[8:12] + "-4" + h[13:16] + "-a" + h[17:20] + "-" + h[20:32]
+	// A UUIDs 8-4-4-4-12 groups, with version 4 and variant a written in.
+	return h[:uuidG1] + "-" + h[uuidG1:uuidG2] + "-4" + h[uuidG2+one:uuidG3] + "-a" + h[uuidG3+one:uuidG4] + "-" + h[uuidG4:uuidEnd]
 }
 
 var addinTypes = map[string]string{".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".png": "image/png"}

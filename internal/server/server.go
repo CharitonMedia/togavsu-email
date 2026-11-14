@@ -225,7 +225,7 @@ func statusOf(err error) (int, string, string) {
 
 func (s *Server) writeErr(w http.ResponseWriter, r *http.Request, err error) {
 	status, code, detail := statusOf(err)
-	if status >= 500 {
+	if status >= http.StatusInternalServerError {
 		s.log().Error("email request", "path", r.URL.Path, "err", err)
 	}
 	writeJSON(w, status, map[string]any{"type": "about:blank", "title": code, "status": status, "code": code, "detail": detail})
@@ -260,7 +260,7 @@ func (s *Server) page(h handler) http.HandlerFunc {
 		}
 		if err != nil {
 			status, _, detail := statusOf(err)
-			if status >= 500 {
+			if status >= http.StatusInternalServerError {
 				s.log().Error("email page", "path", r.URL.Path, "err", err)
 			}
 			writePage(w, status, "Email", messageBody(detail))
@@ -316,7 +316,7 @@ func decode(r *http.Request, dst any) error {
 			switch {
 			case strings.HasSuffix(k, "[]"):
 				obj[strings.TrimSuffix(k, "[]")] = vs
-			case len(vs) == 1 && (vs[0] == "on" || vs[0] == "true" || vs[0] == "false"):
+			case len(vs) == one && (vs[zero] == "on" || vs[zero] == "true" || vs[zero] == "false"):
 				obj[k] = vs[0] != "false"
 			default:
 				obj[k] = vs[0]

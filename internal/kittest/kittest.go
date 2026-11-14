@@ -37,16 +37,16 @@ type Pending struct {
 // accepts any of them.
 var Fields = []Pending{
 	{"container.system_mail", "CORE-05", "check", func(top string, ind int, _, key string) bool {
-		return top == "container" && ind > 0 && key == "system_mail"
+		return top == "container" && ind > zero && key == "system_mail"
 	}},
 	{"device_connect", "CORE-28", "check", func(top string, ind int, _, _ string) bool {
-		return ind == 0 && top == "device_connect"
+		return ind == zero && top == "device_connect"
 	}},
 	{"notifications", "CORE-03", "check", func(top string, ind int, _, _ string) bool {
-		return ind == 0 && top == "notifications"
+		return ind == zero && top == "notifications"
 	}},
 	{"sidebar.section, subgroup, icon, order and badge", "CORE-08", "check", func(top string, ind int, line, key string) bool {
-		return top == "sidebar" && ind > 0 && !strings.HasPrefix(strings.TrimSpace(line), "- ") &&
+		return top == "sidebar" && ind > zero && !strings.HasPrefix(strings.TrimSpace(line), "- ") &&
 			(key == "section" || key == "subgroup" || key == "icon" || key == "order" || key == "badge")
 	}},
 	{"permission module_secrets:write", "CORE-06", "approve", func(top string, _ int, line, _ string) bool {
@@ -128,7 +128,7 @@ func Strip(files map[string][]byte, fields ...Pending) map[string][]byte {
 	for i := 0; i < len(lines); i++ {
 		l := lines[i]
 		ind := indent(l)
-		if ind == 0 && strings.TrimSpace(l) != "" && !strings.HasPrefix(l, "#") {
+		if ind == zero && strings.TrimSpace(l) != "" && !strings.HasPrefix(l, "#") {
 			top, _, _ = strings.Cut(l, ":")
 		}
 		key := strings.TrimPrefix(strings.TrimSpace(l), "- ")

@@ -23,7 +23,7 @@ import (
 
 // MaxThrottled is how many throttled answers in a row one call waits out before it
 // gives up with provider.ErrUnavailable.
-const MaxThrottled = 3
+const MaxThrottled = two + one
 
 // StatusError is an answer the caller may want to tell apart (404, 410).
 type StatusError struct {
@@ -44,7 +44,7 @@ func StatusOf(err error) int {
 	if errors.As(err, &se) {
 		return se.Status
 	}
-	return 0
+	return zero
 }
 
 // Client calls one provider API as one account.
@@ -86,11 +86,11 @@ func RetryAfter(h string, now time.Time) (time.Duration, bool) {
 	if h == "" {
 		return 0, false
 	}
-	if n, err := strconv.Atoi(h); err == nil && n >= 0 {
-		return time.Duration(n) * time.Second, true
+	if n, err := strconv.Atoi(h); err == nil && n >= zero {
+		return time.Duration(n) * second, true
 	}
 	if t, err := http.ParseTime(h); err == nil {
-		if d := t.Sub(now); d > 0 {
+		if d := t.Sub(now); d > zero {
 			return d, true
 		}
 		return 0, true
@@ -120,7 +120,7 @@ func (c *Client) Do(ctx context.Context, r Request, out any) ([]byte, error) {
 		}
 		body, ctype = b, "application/json"
 	}
-	refreshed, throttled := false, 0
+	refreshed, throttled := false, zero
 	for {
 		var tok string
 		if !r.NoAuth {
@@ -180,9 +180,9 @@ func (c *Client) Do(ctx context.Context, r Request, out any) ([]byte, error) {
 				return nil, err
 			}
 			continue
-		case resp.StatusCode >= 500:
+		case resp.StatusCode >= http.StatusInternalServerError:
 			return nil, fmt.Errorf("%w: HTTP %d", provider.ErrUnavailable, resp.StatusCode)
-		case resp.StatusCode >= 300:
+		case resp.StatusCode >= http.StatusMultipleChoices:
 			return nil, &StatusError{Status: resp.StatusCode, Body: trim(data)}
 		}
 		if out != nil && len(data) > 0 {
@@ -206,8 +206,8 @@ func (c *Client) authErr(ctx context.Context, err error) error {
 
 func trim(b []byte) string {
 	s := string(b)
-	if len(s) > 300 {
-		s = s[:300]
+	if len(s) > errorBodyMax {
+		s = s[:errorBodyMax]
 	}
 	return s
 }

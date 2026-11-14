@@ -87,6 +87,14 @@ docker build -t togavsu-email .
 The module requires the core (`github.com/CharitonMedia/togavsu`, pinned in go.mod) for
 `pkg/modulekit` and `pkg/modulekit/coretest`; no replace directive or go.work is used.
 
+The source passes the core's settings source check (`modulekit.CheckSource`, AC-030),
+test-support packages included, and `internal/packaging` holds it to that. Only
+`internal/bootstrap` reads the environment. Every fixed number (a spec rule, a protocol
+or format limit, a UUID offset, a strconv base) is a named constant in its package's
+`fixed.go`, spelled from `zero` and `one` as the core's matter-clock example does, and
+HTTP codes are `http.Status*`. What a firm adjusts is a setting in the manifest, read
+from the core with no default of the module's own.
+
 The unit Postgres tests use one scratch `mod_email_<random>` schema per test in the
 `togavsu_email` database. `coresuite/` composes the real core with coretest: it installs
 the signed package (trusted key, install, approval on the Modules tab), serves the module

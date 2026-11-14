@@ -29,7 +29,7 @@ type Event struct {
 
 // Sign returns the signature header value for body at time at.
 func Sign(secret string, at time.Time, body []byte) string {
-	t := strconv.FormatInt(at.Unix(), 10)
+	t := strconv.FormatInt(at.Unix(), decimal)
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(t + "."))
 	mac.Write(body)

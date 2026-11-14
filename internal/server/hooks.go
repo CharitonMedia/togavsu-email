@@ -6,15 +6,10 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/CharitonMedia/togavsu-email/internal/send"
 	"github.com/CharitonMedia/togavsu-email/internal/webhook"
 )
-
-// Skew is how far a signed delivery's timestamp may be from the module's clock, as
-// matter-clock checks events.
-const Skew = 5 * time.Minute
 
 func (s *Server) signed(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, 40<<20))

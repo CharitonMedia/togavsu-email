@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -336,7 +337,7 @@ WHERE user_prefs.unfiled_notified_at IS NULL OR user_prefs.unfiled_notified_at <
 		return false, err
 	}
 	n, err := res.RowsAffected()
-	return n == 1, err
+	return n == one, err
 }
 
 func (s *Store) strings(ctx context.Context, q string, args ...any) ([]string, error) {
@@ -432,7 +433,7 @@ func (s *Store) Claim(ctx context.Context, m *Message) (bool, error) {
 	if m.ID == "" {
 		m.ID = ids.New(s.Now())
 	}
-	if m.ReceivedAt == 0 {
+	if m.ReceivedAt == zero {
 		m.ReceivedAt = now
 	}
 	if m.ReferenceIDs == nil {
@@ -463,7 +464,7 @@ ON CONFLICT (account_id, provider_ref) DO NOTHING RETURNING id`,
 func (s *Store) Known(ctx context.Context, accountID, ref string) (bool, error) {
 	var n int
 	err := s.DB.QueryRowContext(ctx, `SELECT count(*) FROM messages WHERE account_id = $1 AND provider_ref = $2`, accountID, ref).Scan(&n)
-	return n > 0, err
+	return n > zero, err
 }
 
 // SameMessage finds a row in the account with the same Message-ID and raw bytes (a
@@ -612,27 +613,15 @@ func (s *Store) Queue(ctx context.Context, f QueueFilter) ([]Message, error) {
 		args = append(args, f.AccountID)
 	}
 	where += ` ORDER BY m.received_at, m.id`
-	if f.Limit > 0 {
-		where += ` LIMIT ` + itoa(f.Limit)
+	if f.Limit > zero {
+		where += ` LIMIT ` + strconv.Itoa(f.Limit)
 	}
 	return s.messages(ctx, where, args...)
 }
 
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var b []byte
-	for n > 0 {
-		b = append([]byte{byte('0' + n%10)}, b...)
-		n /= 10
-	}
-	return string(b)
-}
-
 // Inbox lists a personal account folder's rows, newest first.
 func (s *Store) Inbox(ctx context.Context, accountIDs []string, kind string, limit int) ([]Message, error) {
-	return s.messages(ctx, ` WHERE m.account_id = ANY($1) AND f.kind = $2 AND m.status NOT IN ('error') ORDER BY m.received_at DESC LIMIT `+itoa(limit), accountIDs, kind)
+	return s.messages(ctx, ` WHERE m.account_id = ANY($1) AND f.kind = $2 AND m.status NOT IN ('error') ORDER BY m.received_at DESC LIMIT `+strconv.Itoa(limit), accountIDs, kind)
 }
 
 // UnreadCount counts unread inbox rows.
@@ -646,7 +635,7 @@ func (s *Store) UnreadCount(ctx context.Context, accountIDs []string) (int, erro
 func (s *Store) Search(ctx context.Context, q string, limit int) ([]Message, error) {
 	like := "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(strings.ToLower(q)) + "%"
 	return s.messages(ctx, ` WHERE m.status <> 'error' AND (lower(m.subject) LIKE $1 OR lower(m.from_header) LIKE $1 OR lower(m.from_addr) LIKE $1
-OR lower(array_to_string(m.to_addrs, ' ')) LIKE $1 OR lower(m.body_text) LIKE $1) ORDER BY m.received_at DESC LIMIT `+itoa(limit), like)
+OR lower(array_to_string(m.to_addrs, ' ')) LIKE $1 OR lower(m.body_text) LIKE $1) ORDER BY m.received_at DESC LIMIT `+strconv.Itoa(limit), like)
 }
 
 // --- parts, contacts, matches ---
@@ -880,7 +869,7 @@ func (s *Store) Filing(ctx context.Context, messageID string) (Filing, error) {
 // MatterFilings lists a matter's filings, newest first.
 func (s *Store) MatterFilings(ctx context.Context, matterID string, limit int) ([]Filing, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT `+filingCols+` FROM filings f JOIN messages m ON m.id = f.message_id WHERE f.matter_id = $1
-ORDER BY f.filed_at DESC, f.message_id DESC LIMIT `+itoa(limit), matterID)
+ORDER BY f.filed_at DESC, f.message_id DESC LIMIT `+strconv.Itoa(limit), matterID)
 	if err != nil {
 		return nil, err
 	}
@@ -995,7 +984,7 @@ ON CONFLICT (idempotency_key) DO NOTHING`, o.ID, nullStr(o.AccountID), o.Kind, o
 	if err != nil {
 		return false, err
 	}
-	if n, _ := res.RowsAffected(); n == 1 {
+	if n, _ := res.RowsAffected(); n == one {
 		o.Status = "queued"
 		return false, nil
 	}
@@ -1059,7 +1048,7 @@ func (s *Store) RecordEvent(ctx context.Context, id, action, recordID string) (b
 		return false, err
 	}
 	n, err := res.RowsAffected()
-	return n == 1, err
+	return n == one, err
 }
 
 // --- locks ---

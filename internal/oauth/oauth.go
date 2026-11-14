@@ -64,7 +64,7 @@ func random(n int) string {
 }
 
 // NewVerifier returns a PKCE code verifier and a state value.
-func NewVerifier() (verifier, state string) { return random(48), random(24) }
+func NewVerifier() (verifier, state string) { return random(verifierBytes), random(stateBytes) }
 
 // Challenge is the S256 PKCE challenge for verifier.
 func Challenge(verifier string) string {
@@ -107,7 +107,7 @@ func tokenCall(ctx context.Context, hc *http.Client, tokenURL string, form url.V
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if resp.StatusCode >= 500 {
+	if resp.StatusCode >= http.StatusInternalServerError {
 		return provider.Token{}, fmt.Errorf("%w: token endpoint %s", provider.ErrUnavailable, resp.Status)
 	}
 	if resp.StatusCode != http.StatusOK {
@@ -121,7 +121,7 @@ func tokenCall(ctx context.Context, hc *http.Client, tokenURL string, form url.V
 	if err := json.Unmarshal(body, &t); err != nil || t.AccessToken == "" {
 		return provider.Token{}, fmt.Errorf("%w: no access token in the answer", ErrRefused)
 	}
-	return provider.Token{AccessToken: t.AccessToken, RefreshToken: t.RefreshToken, Expiry: time.Now().Add(time.Duration(t.ExpiresIn) * time.Second)}, nil
+	return provider.Token{AccessToken: t.AccessToken, RefreshToken: t.RefreshToken, Expiry: time.Now().Add(time.Duration(t.ExpiresIn) * second)}, nil
 }
 
 // Exchange trades an authorization code for tokens.
@@ -161,7 +161,7 @@ type Source struct {
 // Access returns the access token, refreshing it when it is within a minute of expiry
 // or force is set (the API answered 401).
 func (s *Source) Access(ctx context.Context, force bool) (string, error) {
-	if !force && s.Token.AccessToken != "" && (s.Token.Expiry.IsZero() || time.Until(s.Token.Expiry) > time.Minute) {
+	if !force && s.Token.AccessToken != "" && (s.Token.Expiry.IsZero() || time.Until(s.Token.Expiry) > refreshMargin) {
 		return s.Token.AccessToken, nil
 	}
 	nt, err := Refresh(ctx, s.HTTP, s.TokenURL, s.ClientID, s.ClientSecret, s.Token)

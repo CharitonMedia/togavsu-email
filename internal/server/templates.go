@@ -14,7 +14,7 @@ const PageCSP = "default-src 'none'; style-src 'unsafe-inline'; script-src 'self
 
 var funcs = template.FuncMap{
 	"when": func(ms int64) string {
-		if ms == 0 {
+		if ms == zero {
 			return ""
 		}
 		return time.UnixMilli(ms).UTC().Format("Jan 2, 2006 15:04 UTC")
@@ -28,12 +28,12 @@ var funcs = template.FuncMap{
 	"age": func(ms int64) string {
 		d := time.Since(time.UnixMilli(ms))
 		switch {
-		case d < time.Hour:
+		case d < hour:
 			return "under an hour"
-		case d < 48*time.Hour:
+		case d < hoursShownUpTo*hour:
 			return fmt.Sprintf("%d hours", int(d.Hours()))
 		}
-		return fmt.Sprintf("%d days", int(d.Hours()/24))
+		return fmt.Sprintf("%d days", int(d.Hours()/hoursPerDay))
 	},
 	"pair": func(p any, id string) pairData { return pairData{P: p, ID: id} },
 	"label": func(path string) string {

@@ -35,16 +35,16 @@ import (
 )
 
 func main() {
-	log.SetFlags(0)
-	args := os.Args[1:]
+	log.SetFlags(zero)
+	args := os.Args[one:]
 	if len(args) < 1 {
 		log.Fatal("usage: email serve|package [flags]")
 	}
 	switch args[0] {
 	case "serve":
-		serve(args[1:])
+		serve(args[one:])
 	case "package":
-		pack(args[1:])
+		pack(args[one:])
 	default:
 		log.Fatalf("unknown command %q", args[0])
 	}
@@ -118,7 +118,7 @@ func pack(args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := os.WriteFile(*out, pkg, 0o644); err != nil {
+	if err := os.WriteFile(*out, pkg, packageFileMode); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("wrote %s\nsigning key (add it as a trusted key):\n%s", *out, packaging.PublicKeyPEM(key))

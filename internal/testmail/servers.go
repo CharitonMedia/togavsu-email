@@ -36,8 +36,8 @@ func Cert() (server, client *tls.Config) {
 		panic(err)
 	}
 	tpl := &x509.Certificate{
-		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: Loopback},
-		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(24 * time.Hour),
+		SerialNumber: big.NewInt(one), Subject: pkix.Name{CommonName: Loopback},
+		NotBefore: time.Now().Add(-hour), NotAfter: time.Now().Add(certLife),
 		IPAddresses: []net.IP{net.ParseIP(Loopback)}, KeyUsage: x509.KeyUsageDigitalSignature,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
@@ -128,8 +128,8 @@ func (s *SMTPServer) session(c net.Conn) {
 			return
 		}
 		line = strings.TrimRight(line, "\r\n")
-		verb := strings.ToUpper(strings.SplitN(line, " ", 2)[0])
-		arg := strings.TrimSpace(strings.TrimPrefix(line, strings.SplitN(line, " ", 2)[0]))
+		verb := strings.ToUpper(strings.SplitN(line, " ", two)[zero])
+		arg := strings.TrimSpace(strings.TrimPrefix(line, strings.SplitN(line, " ", two)[zero]))
 		switch verb {
 		case "EHLO", "HELO":
 			fmt.Fprintf(w, "250-localhost\r\n")
@@ -156,13 +156,13 @@ func (s *SMTPServer) session(c net.Conn) {
 			switch strings.ToUpper(mech) {
 			case "PLAIN":
 				p := strings.Split(string(b), "\x00")
-				ok = len(p) == 3 && p[1] == s.User && s.Password != "" && p[2] == s.Password
-				if len(p) == 3 {
-					m.User = p[1]
+				ok = len(p) == authPlainParts && p[one] == s.User && s.Password != "" && p[two] == s.Password
+				if len(p) == authPlainParts {
+					m.User = p[one]
 				}
 			case "XOAUTH2":
 				f := strings.Split(string(b), "\x01")
-				ok = len(f) >= 2 && f[0] == "user="+s.User && s.Token != "" && f[1] == "auth=Bearer "+s.Token
+				ok = len(f) >= two && f[zero] == "user="+s.User && s.Token != "" && f[one] == "auth=Bearer "+s.Token
 				m.User = strings.TrimPrefix(f[0], "user=")
 			}
 			m.Mech = strings.ToUpper(mech)
@@ -172,10 +172,10 @@ func (s *SMTPServer) session(c net.Conn) {
 				say("535 authentication failed")
 			}
 		case "MAIL":
-			m.From = strings.Trim(strings.TrimPrefix(strings.ToUpper(arg[:5])+arg[5:], "FROM:"), "<> ")
+			m.From = strings.Trim(strings.TrimPrefix(strings.ToUpper(arg[:len(mailFrom)])+arg[len(mailFrom):], mailFrom), "<> ")
 			say("250 ok")
 		case "RCPT":
-			m.To = append(m.To, strings.Trim(arg[3:], "<> "))
+			m.To = append(m.To, strings.Trim(arg[len(rcptTo):], "<> "))
 			say("250 ok")
 		case "DATA":
 			say("354 send it")

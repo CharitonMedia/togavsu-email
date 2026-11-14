@@ -123,7 +123,7 @@ func (a *Adapter) Folders(ctx context.Context) ([]provider.Folder, error) {
 		for _, f := range fs {
 			name := prefix + f.DisplayName
 			out = append(out, provider.Folder{Ref: f.ID, Name: name, Kind: provider.KindFor(name, "")})
-			if f.ChildFolderCount > 0 {
+			if f.ChildFolderCount > zero {
 				kids, err := a.folderPage(ctx, a.me+"/mailFolders/"+url.PathEscape(f.ID)+"/childFolders?$top=100")
 				if err != nil {
 					return err
@@ -374,7 +374,7 @@ func (a *Adapter) Send(ctx context.Context, raw []byte, env provider.Envelope) (
 	raw = restapi.WithBcc(raw, env)
 	id := restapi.MessageID(raw)
 	body, atts, err := split(raw)
-	total := 0
+	total := zero
 	for _, at := range atts {
 		total += len(at.data)
 	}

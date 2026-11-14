@@ -248,8 +248,10 @@ func (f *Filer) afterFile(ctx context.Context, a store.Account, m store.Message)
 }
 
 const (
-	titleMax = 200
-	textMax  = 20000
+	// titleMax: the note title is cut to 200 characters (spec, filing record).
+	titleMax = (one + one) * hundred
+	// textMax: the note body keeps at most 20,000 characters of the message text.
+	textMax = (one + one) * hundred * hundred
 )
 
 // Note builds the filing note: title "Email: <subject>"; body the From, To, Cc and Date

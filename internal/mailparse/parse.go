@@ -134,7 +134,7 @@ func Parse(raw []byte) (msg *Message, err error) {
 }
 
 func (m *Message) readParts(mr *mail.Reader) error {
-	idx := 0
+	idx := zero
 	for {
 		p, err := mr.NextPart()
 		if errors.Is(err, io.EOF) {
@@ -224,8 +224,8 @@ func decodeHeader(s string) string {
 func Snippet(text string) string {
 	s := strings.Join(strings.Fields(text), " ")
 	r := []rune(s)
-	if len(r) > 200 {
-		r = r[:200]
+	if len(r) > snippetMax {
+		r = r[:snippetMax]
 	}
 	return string(r)
 }

@@ -140,7 +140,7 @@ func ValidAddress(s string) bool {
 		return false
 	}
 	at := strings.LastIndexByte(s, '@')
-	return at > 0 && strings.Contains(s[at+1:], ".")
+	return at > zero && strings.Contains(s[at+one:], ".")
 }
 
 // Addresses splits a comma- or semicolon-separated list, lower-cased.

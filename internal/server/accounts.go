@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/CharitonMedia/togavsu-email/internal/mailbox"
 	"github.com/CharitonMedia/togavsu-email/internal/oauth"
@@ -154,11 +153,11 @@ func (s *Server) connectIMAP(w http.ResponseWriter, r *http.Request, v Viewer) e
 	a.IMAPHost, a.IMAPPort, a.IMAPSecurity = strings.TrimSpace(b.IMAPHost), b.IMAPPort, sec(b.IMAPSecurity, "tls")
 	a.SMTPHost, a.SMTPPort, a.SMTPSecurity = strings.TrimSpace(b.SMTPHost), b.SMTPPort, sec(b.SMTPSecurity, "starttls")
 	a.Login = b.Login
-	if a.IMAPPort == 0 {
-		a.IMAPPort = 993
+	if a.IMAPPort == zero {
+		a.IMAPPort = imapsPort
 	}
-	if a.SMTPPort == 0 {
-		a.SMTPPort = 587
+	if a.SMTPPort == zero {
+		a.SMTPPort = submissionPort
 	}
 	for _, x := range []string{a.IMAPSecurity, a.SMTPSecurity} {
 		if x != "tls" && x != "starttls" {
@@ -328,7 +327,7 @@ func (s *Server) oauthStart(w http.ResponseWriter, r *http.Request, v Viewer) er
 	}
 	redirect := publicBase(r) + "/oauth/callback"
 	if err := s.Store.InsertState(ctx, store.OAuthState{State: state, AccountID: b.AccountID, UserID: v.UserID, Provider: b.Provider, Role: b.Role,
-		OwnerUserID: owner, Label: b.Label, CodeVerifier: verifier, RedirectURI: redirect, ExpiresAt: s.now().Add(10 * time.Minute).UnixMilli()}); err != nil {
+		OwnerUserID: owner, Label: b.Label, CodeVerifier: verifier, RedirectURI: redirect, ExpiresAt: s.now().Add(oauthStateTTL).UnixMilli()}); err != nil {
 		return err
 	}
 	u := oauth.AuthURL(oauth.For(b.Provider, st.MicrosoftTenant), b.Provider, clientID, redirect, state, verifier, b.Address)

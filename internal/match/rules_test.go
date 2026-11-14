@@ -3,10 +3,13 @@ package match
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
+	"regexp"
 	"testing"
 
 	"github.com/CharitonMedia/togavsu-email/internal/coreapi"
+	pkgfiles "github.com/CharitonMedia/togavsu-email/package"
 )
 
 var firm = []string{"firm.example.test"}
@@ -27,7 +30,22 @@ func contacts(addr string, ids ...string) map[string][]coreapi.MatchContact {
 	return out
 }
 
-func cfg() Config { return Config{Patterns: ParsePatterns(""), AIPick: true} }
+func cfg() Config { return Config{Patterns: manifestPatterns(), AIPick: true} }
+
+// manifestPatterns is case_number_patterns as the manifest defaults it (trial first,
+// appellate second), the value the core sends for an unset setting.
+func manifestPatterns() []*regexp.Regexp {
+	d, err := pkgfiles.Defaults()
+	if err != nil || d["case_number_patterns"] == "" {
+		panic(fmt.Sprintf("manifest defaults: %v", err))
+	}
+	return ParsePatterns(d["case_number_patterns"])
+}
+
+func defaultPatterns(t *testing.T) []*regexp.Regexp {
+	t.Helper()
+	return manifestPatterns()
+}
 
 func TestAddressRules(t *testing.T) {
 	in := Input{Role: "filing", FirmDomains: firm, From: []string{"pat@client.example.test"}, To: []string{"filing@firm.example.test"}}
@@ -148,7 +166,7 @@ func TestThread(t *testing.T) {
 }
 
 func TestDefaultPatterns(t *testing.T) {
-	ps := ParsePatterns("")
+	ps := defaultPatterns(t)
 	cases := map[string][]string{
 		"Notice of filing in 26AB-CV00123 Doe v. Roe":        {"26AB-CV00123"},
 		"Case 26AB-CV00123-01 Order entered":                 {"26AB-CV00123-01"},
@@ -178,7 +196,7 @@ func TestCourtRules(t *testing.T) {
 		matter("m1", "2026-0042", "open", "26AB-CV00123"),
 		{ID: "m2", Number: "2026-0050", Name: "Doe 26AB-CV00123", Status: "open", Clients: []coreapi.MatchClient{pat()}, Via: []string{"case_number_in_name"}},
 	}}
-	d, _ := Decide(ctx, in, Config{Patterns: ParsePatterns("")}, ans, nil)
+	d, _ := Decide(ctx, in, Config{Patterns: defaultPatterns(t)}, ans, nil)
 	if d.Outcome == File && d.How != HowCourtName {
 		t.Fatalf("suffix filed by number: %+v", d)
 	}
@@ -224,7 +242,7 @@ func TestCourtRules(t *testing.T) {
 	// No number: the client's first and last name in the caption, one matter.
 	in = notice("Filed on behalf of: Pat Doe. Hearing set.")
 	ans = coreapi.MatchAnswer{Matters: []coreapi.MatchMatter{matter("m1", "2026-0042", "open", "", "client_name")}}
-	d, _ = Decide(ctx, in, Config{Patterns: ParsePatterns("")}, ans, nil)
+	d, _ = Decide(ctx, in, Config{Patterns: defaultPatterns(t)}, ans, nil)
 	if d.Outcome != File || d.How != HowCourtName {
 		t.Fatalf("court name: %+v", d)
 	}
@@ -276,7 +294,7 @@ func TestCourtAIPick(t *testing.T) {
 	// Turned off: never asked.
 	in.AIDeclined = false
 	p, n = ask("m1", nil)
-	d, _ = Decide(ctx, in, Config{Patterns: ParsePatterns("")}, ans, p)
+	d, _ = Decide(ctx, in, Config{Patterns: defaultPatterns(t)}, ans, p)
 	if *n != 0 || d.Outcome != Queue {
 		t.Fatalf("off: %+v", d)
 	}

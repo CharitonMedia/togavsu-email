@@ -53,7 +53,7 @@ func Send(ctx context.Context, s Server, from string, to []string, raw []byte) e
 	var d net.Dialer
 	var conn net.Conn
 	var err error
-	implicit := s.Implicit || s.Port == 465
+	implicit := s.Implicit || s.Port == submissionsPort
 	if implicit {
 		td := tls.Dialer{NetDialer: &d, Config: s.tlsConfig()}
 		conn, err = td.DialContext(ctx, "tcp", addr)
@@ -90,7 +90,7 @@ func Send(ctx context.Context, s Server, from string, to []string, raw []byte) e
 		}
 		if err := c.Auth(a); err != nil {
 			var te *textproto.Error
-			if errors.As(err, &te) && te.Code >= 500 && te.Code < 600 {
+			if errors.As(err, &te) && te.Code >= permanentFailure && te.Code < permanentFailure+hundred {
 				return fmt.Errorf("%w: %v", ErrAuth, err)
 			}
 			return ctxErr(ctx, err)

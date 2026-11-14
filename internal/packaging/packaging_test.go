@@ -147,31 +147,11 @@ func TestParseKey(t *testing.T) {
 	}
 }
 
-// The core's settings source check over the module root. Environment reads are held to
-// it now: only internal/bootstrap reads the environment. Its numeric-literal rule is not
-// yet: on a module it reports ordinary idioms (an index compared with 0, len(x) == 1,
-// os.Args[1:], a strconv base, a status range, a byte offset), which the core passes only
-// through per-file allowlists for its own paths that a module cannot extend. That is
-// reported to the kit; until it is settled this skips, naming the count, rather than
-// contorting the code around the heuristic.
+// The core's settings source check (AC-030) passes over the whole module root,
+// test-support packages included: only internal/bootstrap reads the environment, and
+// every fixed number is a named constant in its package's fixed.go.
 func TestModuleSourceSettingsCheck(t *testing.T) {
-	err := modulekit.CheckSource("../..")
-	if err == nil {
-		return
+	if err := modulekit.CheckSource("../.."); err != nil {
+		t.Fatal(err)
 	}
-	var env, literals []string
-	for _, l := range strings.Split(err.Error(), "\n")[1:] {
-		switch {
-		case strings.Contains(l, "environment read"), strings.Contains(l, "dot-import"):
-			env = append(env, l)
-		case strings.Contains(l, "tunable"):
-			literals = append(literals, l)
-		default:
-			t.Errorf("unexpected finding: %s", l)
-		}
-	}
-	if len(env) > 0 {
-		t.Fatalf("environment read outside internal/bootstrap:\n%s", strings.Join(env, "\n"))
-	}
-	t.Skipf("kit: CheckSource reports %d numeric literals in ordinary module code (first: %s); the core passes the same rule only through its own path allowlists", len(literals), literals[0])
 }

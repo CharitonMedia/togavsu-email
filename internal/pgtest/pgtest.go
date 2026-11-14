@@ -93,7 +93,7 @@ func New(t testing.TB) *DB {
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	schema := "mod_email_" + strings.ReplaceAll(ids.Secret(6), "-", "")
+	schema := "mod_email_" + strings.ReplaceAll(ids.Secret(schemaSuffixBytes), "-", "")
 	if _, err := core.ExecContext(ctx, `CREATE SCHEMA `+schema); err != nil {
 		t.Fatal(err)
 	}

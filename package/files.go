@@ -3,12 +3,19 @@ package pkgfiles
 
 import (
 	"embed"
+	"fmt"
 	"io/fs"
+	"sort"
+	"strconv"
 	"strings"
 )
 
 //go:embed togavsu-module.yaml migrations/*.sql
 var packageFS embed.FS
+
+// manifestFile is the manifest's path in the package. This directory is the package
+// itself, so its Go files carry no fixed.go of their own.
+const manifestFile = "togavsu-module.yaml"
 
 // Files returns the package files by package path.
 func Files() (map[string][]byte, error) {
@@ -41,14 +48,42 @@ func Migrations() ([]string, map[string]string, error) {
 			body[n] = string(b)
 		}
 	}
-	sortStrings(names)
+	sort.Strings(names)
 	return names, body, nil
 }
 
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j] < s[j-1]; j-- {
-			s[j], s[j-1] = s[j-1], s[j]
+// Defaults returns each setting's default as the manifest's settings list declares it;
+// the core answers an unset setting with this value. It reads only that list, so it
+// works on a manifest the pinned core's full validation still refuses.
+func Defaults() (map[string]string, error) {
+	b, err := packageFS.ReadFile(manifestFile)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	in, key := false, ""
+	for _, l := range strings.Split(string(b), "\n") {
+		if l != "" && !strings.HasPrefix(l, " ") {
+			in = strings.HasPrefix(l, "settings:")
+			continue
+		}
+		t := strings.TrimSpace(l)
+		if !in {
+			continue
+		}
+		if k, ok := strings.CutPrefix(t, "- key:"); ok {
+			key = strings.TrimSpace(k)
+			continue
+		}
+		if v, ok := strings.CutPrefix(t, "default:"); ok && key != "" {
+			v = strings.TrimSpace(v)
+			if strings.HasPrefix(v, `"`) {
+				if v, err = strconv.Unquote(v); err != nil {
+					return nil, fmt.Errorf("pkgfiles: default of %s: %w", key, err)
+				}
+			}
+			out[key] = v
 		}
 	}
+	return out, nil
 }

@@ -50,9 +50,6 @@ const (
 	AIFailed            = "ai_pick_failed"
 )
 
-// DefaultPatterns is the case_number_patterns default: trial first, appellate second.
-const DefaultPatterns = `\b(\d{2}[A-Z]{2,4}-[A-Z]{2,3}\d{4,8}(?:-\d{1,3})?)\b;\b((?:SC|ED|WD|SD)\d{4,6})\b`
-
 // Input is what the rules know about one message.
 type Input struct {
 	Role           string // personal, filing, court
@@ -100,9 +97,6 @@ type Picker func(ctx context.Context, input map[string]any) (string, error)
 // ParsePatterns reads the semicolon-separated case_number_patterns setting. Invalid
 // patterns are skipped; an empty setting uses the default.
 func ParsePatterns(s string) []*regexp.Regexp {
-	if strings.TrimSpace(s) == "" {
-		s = DefaultPatterns
-	}
 	var out []*regexp.Regexp
 	for _, p := range strings.Split(s, ";") {
 		if p = strings.TrimSpace(p); p == "" {
@@ -135,7 +129,7 @@ func Direction(in Input) string {
 // IsFirm reports whether addr is at one of the firm's domains.
 func IsFirm(addr string, domains []string) bool {
 	at := strings.LastIndexByte(addr, '@')
-	if at < 0 {
+	if at < zero {
 		return false
 	}
 	d := strings.ToLower(addr[at+1:])
@@ -171,7 +165,7 @@ func PlusToken(in Input) string {
 		return ""
 	}
 	at := strings.LastIndexByte(in.AccountAddress, '@')
-	if at < 0 {
+	if at < zero {
 		return ""
 	}
 	local, domain := strings.ToLower(in.AccountAddress[:at]), strings.ToLower(in.AccountAddress[at+1:])
@@ -179,7 +173,7 @@ func PlusToken(in Input) string {
 		for _, a := range l {
 			a = strings.ToLower(a)
 			i := strings.LastIndexByte(a, '@')
-			if i < 0 || a[i+1:] != domain || !strings.HasPrefix(a[:i], local+"+") {
+			if i < zero || a[i+one:] != domain || !strings.HasPrefix(a[:i], local+"+") {
 				continue
 			}
 			if t := a[len(local)+1 : i]; t != "" {
@@ -199,8 +193,8 @@ func CaseNumbers(text string, patterns []*regexp.Regexp) []string {
 		seen := map[string]bool{}
 		for _, m := range re.FindAllStringSubmatch(text, -1) {
 			n := m[0]
-			if len(m) > 1 && m[1] != "" {
-				n = m[1]
+			if len(m) > one && m[one] != "" {
+				n = m[one]
 			}
 			if !seen[n] {
 				seen[n] = true
@@ -222,15 +216,15 @@ var stop = map[string]bool{"the": true, "and": true, "for": true, "of": true, "i
 // NameTokens lists capitalized words from the notice's subject and opening text, the
 // surnames the core checks against clients (at most 50).
 func NameTokens(subject, text string) []string {
-	if len(text) > 4000 {
-		text = text[:4000]
+	if len(text) > nameTextMax {
+		text = text[:nameTextMax]
 	}
 	seen := map[string]bool{}
 	var out []string
 	for _, w := range strings.FieldsFunc(subject+"\n"+text, func(r rune) bool { return !unicode.IsLetter(r) && r != '\'' }) {
 		w = strings.Trim(w, "'")
 		r := []rune(w)
-		if len(r) < 2 || !unicode.IsUpper(r[0]) {
+		if len(r) < two || !unicode.IsUpper(r[zero]) {
 			continue
 		}
 		l := strings.ToLower(w)
@@ -239,7 +233,7 @@ func NameTokens(subject, text string) []string {
 		}
 		seen[l] = true
 		out = append(out, l)
-		if len(out) == 50 {
+		if len(out) == matchEntriesMax {
 			break
 		}
 	}
@@ -305,16 +299,16 @@ func Decide(ctx context.Context, in Input, cfg Config, ans coreapi.MatchAnswer, 
 			}
 		}
 		switch {
-		case len(byNumber) == 1:
+		case len(byNumber) == one:
 			return file(byNumber[0].ID, HowToken, "token"), nil
-		case len(byNumber) > 1:
+		case len(byNumber) > one:
 			for _, m := range byNumber {
 				c.add(m.ID, "token")
 			}
 			return queue(TokenMultiple, c), nil
-		case len(byName) == 1:
+		case len(byName) == one:
 			return file(byName[0].ID, HowToken, "token"), nil
-		case len(byName) > 1:
+		case len(byName) > one:
 			for _, m := range byName {
 				c.add(m.ID, "token")
 			}
@@ -331,7 +325,7 @@ func Decide(ctx context.Context, in Input, cfg Config, ans coreapi.MatchAnswer, 
 				hits = append(hits, m)
 			}
 		}
-		if len(hits) == 1 {
+		if len(hits) == one {
 			return file(hits[0].ID, HowThread, "thread"), nil
 		}
 		for _, m := range hits {
@@ -368,7 +362,7 @@ func address(in Input, ans coreapi.MatchAnswer, c cands) Decision {
 		for _, ct := range cs {
 			contactIDs[ct.ContactID] = true
 		}
-		if len(cs) == 1 {
+		if len(cs) == one {
 			byAddr[a] = cs[0].ContactID
 		}
 	}
@@ -379,7 +373,7 @@ func address(in Input, ans coreapi.MatchAnswer, c cands) Decision {
 		}
 		d := queue(NoContact, c)
 		return d
-	case len(contactIDs) > 1:
+	case len(contactIDs) > one:
 		d := queue(MultipleContacts, c)
 		d.Contacts = byAddr
 		return d
@@ -395,9 +389,9 @@ func address(in Input, ans coreapi.MatchAnswer, c cands) Decision {
 	}
 	var d Decision
 	switch len(open) {
-	case 0:
+	case zero:
 		d = queue(NoOpenMatter, c)
-	case 1:
+	case one:
 		d = file(open[0].ID, HowAddress, "address")
 	default:
 		d = queue(MultipleOpenMatters, c)
@@ -430,10 +424,10 @@ func court(ctx context.Context, in Input, cfg Config, ans coreapi.MatchAnswer, p
 			}
 		}
 		switch len(ok) {
-		case 1:
+		case one:
 			d := file(ok[0].ID, HowCourt, viaNumber(ok[0], numbers))
 			return d, nil
-		case 0:
+		case zero:
 			return queue(PartyMismatch, c), nil
 		default:
 			return queue(MultipleCaseMatches, c), nil
@@ -451,7 +445,7 @@ func court(ctx context.Context, in Input, cfg Config, ans coreapi.MatchAnswer, p
 			byName = append(byName, m)
 		}
 	}
-	if len(byName) == 1 {
+	if len(byName) == one {
 		return file(byName[0].ID, HowCourtName, "client_name"), nil
 	}
 	for _, m := range surname {
@@ -460,7 +454,7 @@ func court(ctx context.Context, in Input, cfg Config, ans coreapi.MatchAnswer, p
 
 	// The model picks among surname candidates, once per message.
 	if len(surname) > 0 && cfg.AIPick && !in.AIDeclined && pick != nil {
-		input := map[string]any{"subject": in.Subject, "text": cut(in.Text, 8000), "case_numbers": numbers, "candidates": candidateInput(surname)}
+		input := map[string]any{"subject": in.Subject, "text": cut(in.Text, aiTextMax), "case_numbers": numbers, "candidates": candidateInput(surname)}
 		id, err := pick(ctx, input)
 		if err != nil {
 			d := queue(AIFailed, c)
@@ -483,7 +477,7 @@ func court(ctx context.Context, in Input, cfg Config, ans coreapi.MatchAnswer, p
 		return d, nil
 	}
 	switch {
-	case len(byName) > 1:
+	case len(byName) > one:
 		return queue(MultipleNameMatches, c), nil
 	case len(numbers) == 0 && len(surname) == 0:
 		return queue(NoCaseNumber, c), nil
@@ -524,11 +518,11 @@ func InName(name, cn string) bool {
 	n, k := strings.ToUpper(name), strings.ToUpper(cn)
 	for i := 0; i < len(n); {
 		j := strings.Index(n[i:], k)
-		if j < 0 {
+		if j < zero {
 			return false
 		}
 		s, e := i+j, i+j+len(k)
-		if (s == 0 || !alnum(n[s-1])) && (e == len(n) || (!alnum(n[e]) && n[e] != '-')) {
+		if (s == zero || !alnum(n[s-one])) && (e == len(n) || (!alnum(n[e]) && n[e] != '-')) {
 			return true
 		}
 		i = s + 1

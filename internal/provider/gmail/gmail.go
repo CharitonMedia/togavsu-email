@@ -161,7 +161,7 @@ func (a *Adapter) historyID(ctx context.Context) (string, error) {
 func (a *Adapter) list(ctx context.Context, labelID string, since time.Time) ([]string, error) {
 	q := url.Values{"labelIds": {labelID}, "maxResults": {"500"}}
 	if !since.IsZero() {
-		q.Set("q", "after:"+strconv.FormatInt(since.Unix(), 10))
+		q.Set("q", "after:"+strconv.FormatInt(since.Unix(), decimal))
 	}
 	var ids []string
 	for {

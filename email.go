@@ -83,7 +83,7 @@ func New(c Config) *Module {
 		if err != nil {
 			return config.Settings{}, err
 		}
-		return config.Parse(m), nil
+		return config.Parse(m)
 	}
 	op := &mailbox.Opener{Core: core, Factory: c.Factory, Settings: settings, TokenURL: c.OAuthToken, APIBase: c.APIBase}
 	filer := &filing.Filer{Store: st, Core: core, Mailbox: op.Open, TempDir: c.TempDir}
