@@ -116,25 +116,17 @@ func pack(args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	pkg, held, err := email.Build(key, nil)
+	pkg, ip, err := email.Build(key, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 	if err := os.WriteFile(*out, pkg, packageFileMode); err != nil {
 		log.Fatal(err)
 	}
-	for _, h := range held {
+	for _, h := range ip.Held {
 		fmt.Fprintln(os.Stderr, h.String())
 	}
-	files, err := email.Files()
-	if err != nil {
-		log.Fatal(err)
-	}
-	unused, err := packaging.Unused(files, held)
-	if err != nil {
-		log.Fatal(err)
-	}
-	for _, e := range unused {
+	for _, e := range ip.Unused {
 		fmt.Fprintf(os.Stderr, "pending %s (%s) holds nothing back: the core accepts it or the package no longer has it\n", e.Part(), e.Core)
 	}
 	fmt.Printf("wrote %s\nsigning key (add it as a trusted key):\n%s", *out, packaging.PublicKeyPEM(key))

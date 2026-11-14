@@ -44,7 +44,7 @@ func TestPackageDirIsTheEmbeddedPackage(t *testing.T) {
 func TestBuildSignsTheInstallablePackage(t *testing.T) {
 	files := kittest.Files(t)
 	pub, priv := kittest.Key(t)
-	signed, held, err := packaging.Build(priv, files)
+	signed, ip, err := packaging.Build(priv, files)
 	if err != nil {
 		t.Fatalf("Build with a valid key: %v", err)
 	}
@@ -75,11 +75,7 @@ func TestBuildSignsTheInstallablePackage(t *testing.T) {
 		t.Fatalf("email.Build gives other bytes: %v", err)
 	}
 
-	unused, err := packaging.Unused(files, held)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, e := range unused {
+	for _, e := range ip.Unused {
 		t.Errorf("pending %s (%s) holds nothing back: the pinned core accepts it or the package no longer has it; take it out of package/pending.yaml", e.Part(), e.Core)
 	}
 
@@ -90,7 +86,7 @@ func TestBuildSignsTheInstallablePackage(t *testing.T) {
 		}
 	}
 	covered := map[string]bool{}
-	for _, h := range held {
+	for _, h := range ip.Held {
 		if len(h.Refusals) == 0 {
 			t.Errorf("%s held back with no refusal", h)
 		}
@@ -127,15 +123,14 @@ func TestPendingListMustMatchTheRefusals(t *testing.T) {
 	}
 
 	extra := copyFiles(files)
-	stale := modulekit.Pending{Field: "sidebar[*].subgroup", Core: "CORE-08", Reason: "A part this package doesn't have."}
+	stale := modulekit.Pending{Field: "sidebar[*].subgroup", Core: modulekit.CoreItems{"CORE-08"}, Reason: "A part this package doesn't have."}
 	extra[modulekit.PendingFile] = pendingYAML(append(append([]modulekit.Pending(nil), entries...), stale))
-	_, held, err := packaging.Build(priv, extra)
+	_, ip, err := packaging.Build(priv, extra)
 	if err != nil {
 		t.Fatal(err)
 	}
-	unused, err := packaging.Unused(extra, held)
-	if err != nil || len(unused) != 1 || unused[0].Part() != stale.Part() {
-		t.Fatalf("unused %+v: %v", unused, err)
+	if len(ip.Unused) != 1 || ip.Unused[0].Part() != stale.Part() {
+		t.Fatalf("unused %+v", ip.Unused)
 	}
 }
 
@@ -243,7 +238,7 @@ func pendingYAML(entries []modulekit.Pending) []byte {
 		default:
 			b.WriteString("  - migration: " + e.Migration + "\n")
 		}
-		b.WriteString("    core: " + e.Core + "\n    reason: " + e.Reason + "\n")
+		b.WriteString("    core: [" + strings.Join(e.Core, ", ") + "]\n    reason: " + e.Reason + "\n")
 	}
 	return []byte(b.String())
 }

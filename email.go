@@ -128,20 +128,20 @@ func Archive(edit func(map[string][]byte)) ([]byte, error) {
 	if edit != nil {
 		edit(files)
 	}
-	out, _, err := packaging.Installable(files)
+	ip, err := packaging.Installable(files)
 	if err != nil {
 		return nil, err
 	}
-	return modulekit.Archive(out)
+	return modulekit.Archive(ip.Files)
 }
 
 // Build writes the package signed with key as the signed package file the admin
 // installs, holding back the pending parts the pinned core refuses, and returns the
-// parts it held back.
-func Build(key ed25519.PrivateKey, edit func(map[string][]byte)) ([]byte, []modulekit.Held, error) {
+// parts it held back and the entries that held nothing back (packaging.Installable).
+func Build(key ed25519.PrivateKey, edit func(map[string][]byte)) ([]byte, modulekit.InstallablePackage, error) {
 	files, err := Files()
 	if err != nil {
-		return nil, nil, err
+		return nil, modulekit.InstallablePackage{}, err
 	}
 	if edit != nil {
 		edit(files)

@@ -31,14 +31,14 @@ func Files(t testing.TB) map[string][]byte {
 // get there. It fails the test on a refusal pending.yaml doesn't cover.
 func Installable(t testing.TB) (map[string][]byte, []modulekit.Held) {
 	t.Helper()
-	files, held, err := modulekit.Installable(Files(t))
+	ip, err := modulekit.Installable(Files(t))
 	if err != nil {
 		t.Fatalf("the pinned core refuses parts pending.yaml doesn't cover: %v", err)
 	}
-	for _, h := range held {
+	for _, h := range ip.Held {
 		t.Log(h.String())
 	}
-	return files, held
+	return ip.Files, ip.Held
 }
 
 // Key is a throwaway Ed25519 signing key made at test time.

@@ -34,9 +34,10 @@ jobs:
         if: ${{ !cancelled() }}
         # -timeout 0 turns off go test's default limit.
         run: go test -race -timeout 0 ./...
-      # The core's install checks on the package, holding back the parts
-      # package/pending.yaml lists that the pinned core refuses. Prints each held part
-      # with its CORE item; fails on any refusal pending.yaml doesn't cover.
+      # The core's install checks on the package, as the marketplace checks it, holding
+      # back the parts package/pending.yaml lists that the pinned core refuses. Prints
+      # each held part with its CORE item; fails on any refusal pending.yaml doesn't
+      # cover, and (-strict) on an entry that holds nothing back.
       - name: package check
         if: ${{ !cancelled() }}
-        run: go run github.com/CharitonMedia/togavsu/cmd/togavsu-module check -installable package
+        run: go run github.com/CharitonMedia/togavsu/cmd/togavsu-module check -installable -strict package

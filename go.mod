@@ -3,7 +3,7 @@ module github.com/CharitonMedia/togavsu-email
 go 1.22
 
 require (
-	github.com/CharitonMedia/togavsu v0.0.0-20261114192323-9b5f884eb99b
+	github.com/CharitonMedia/togavsu v0.0.0-20261114205059-0e111cae4ec9
 	github.com/emersion/go-imap/v2 v2.0.0-beta.5
 	github.com/emersion/go-message v0.18.1
 	github.com/emersion/go-sasl v0.0.0-20231106173351-e73c9f7bad43
