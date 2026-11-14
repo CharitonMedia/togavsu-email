@@ -8,9 +8,8 @@
 // togavsu_db_schema. Mail credentials are never here: admins and mailbox owners enter
 // them at runtime and they live in the core's module secret store.
 //
-// Packaging and signing go through packaging.Default, which waits on a public
-// packaging and signing package or CLI from the core; until then the package command
-// says so and writes nothing.
+// Packaging and signing go through the core's public module kit (pkg/modulekit): the
+// package command runs the core's install checks, packs the files and signs them.
 package main
 
 import (
@@ -31,6 +30,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	email "github.com/CharitonMedia/togavsu-email"
+	"github.com/CharitonMedia/togavsu-email/internal/packaging"
 )
 
 func main() {
@@ -106,23 +106,26 @@ func serve(args []string) {
 
 func pack(args []string) {
 	fs := flag.NewFlagSet("package", flag.ExitOnError)
-	keyFile := fs.String("key", "", "author signing key file")
+	keyFile := fs.String("key", "", "author signing key file (a base64 Ed25519 seed)")
 	out := fs.String("out", "email.signed.json", "signed package file to write")
 	_ = fs.Parse(args)
-	var seed []byte
-	if *keyFile != "" {
-		b, err := os.ReadFile(*keyFile)
-		if err != nil {
-			log.Fatal(err)
-		}
-		seed = b
+	if *keyFile == "" {
+		log.Fatal("package: -key is required")
 	}
-	pkg, err := email.Build(seed, nil)
+	b, err := os.ReadFile(*keyFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	key, err := packaging.ParseKey(string(b))
+	if err != nil {
+		log.Fatal(err)
+	}
+	pkg, err := email.Build(key, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 	if err := os.WriteFile(*out, pkg, 0o644); err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("wrote %s\n", *out)
+	fmt.Printf("wrote %s\nsigning key (add it as a trusted key):\n%s", *out, packaging.PublicKeyPEM(key))
 }
