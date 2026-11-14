@@ -76,42 +76,6 @@ func TestCoreInstallsTheSignedPackage(t *testing.T) {
 	}
 }
 
-// The pinned core refuses each pending scope of kittest.Fields at approval: a package
-// with only that one pending field kept installs, and approving it is refused and
-// deploys nothing. Once the core knows the scope, this fails and names it.
-func TestPendingScopesRefusedAtApproval(t *testing.T) {
-	for _, f := range kittest.Fields {
-		if f.Stage != "approve" {
-			continue
-		}
-		t.Run(f.Core, func(t *testing.T) {
-			c := coretest.New(t)
-			c.Serve(email.ID, func(m coretest.Module) http.Handler { return http.NotFoundHandler() })
-			pub, priv := kittest.Key(t)
-			c.TrustKey("Email module test key", pub)
-			files := kittest.Only(kittest.Files(t), f)
-			signed, err := modulekit.Build(priv, files)
-			if err != nil {
-				t.Fatalf("%s alone is refused at install: %v", f.Field, err)
-			}
-			c.Install(signed)
-			m, err := modulekit.ParseManifest(files[modulekit.ManifestFile])
-			if err != nil {
-				t.Fatal(err)
-			}
-			var ds []map[string]string
-			for _, p := range m.Permissions {
-				ds = append(ds, map[string]string{"scope": p.Scope, "decision": "approve"})
-			}
-			r := c.Admin.Do(http.MethodPost, "/api/v1/modules/"+email.ID+"/permissions", map[string]any{"decisions": ds})
-			if r.Code == http.StatusOK || len(c.Runtime.Deployments()) != 0 {
-				t.Fatalf("the pinned core now accepts %s (%s): take it out of kittest.Fields (%d %s)", f.Field, f.Core, r.Code, r.Body)
-			}
-			t.Logf("%s refused: %d %s", f.Field, r.Code, r.Body)
-		})
-	}
-}
-
 // MOD-EML-02: on the module's own login, the database refuses a court account that
 // deletes and a personal account without an owner.
 func TestMODEML02AccountChecks(t *testing.T) {

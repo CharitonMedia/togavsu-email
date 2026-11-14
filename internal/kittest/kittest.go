@@ -1,19 +1,15 @@
 // Package kittest holds what the module's tests share on the core's public module kit:
-// the package files as the pinned core can install them, and throwaway signing keys.
+// the package files as the pinned core installs them, and throwaway signing keys.
 //
-// The manifest declares fields and scopes the spec's core changes add
-// (container.system_mail, device_connect, notifications, the sidebar's icon, order,
-// section and badge, and the scopes module_secrets:write and mail:system). A core that
-// lacks them refuses the manifest at install or the permissions at approval. Installable returns the package
-// unchanged once the pinned core accepts it, and until then the package with exactly
-// those fields taken out, naming each with its CORE item, so the suites can drive
-// everything else on the real core. Only tests use it: the package command always
-// ships the full manifest, and refuses to sign while the pinned core refuses it.
+// The manifest declares fields and scopes the spec's core changes add, and
+// package/pending.yaml names each with its CORE item. Installable is the kit's
+// modulekit.Installable over the module's package: the full package once the pinned core
+// accepts it, and until then the package without the pending parts the core refuses, so
+// the suites drive everything else on the real core.
 package kittest
 
 import (
 	"crypto/ed25519"
-	"strings"
 	"testing"
 
 	"github.com/CharitonMedia/togavsu/pkg/modulekit"
@@ -21,52 +17,7 @@ import (
 	email "github.com/CharitonMedia/togavsu-email"
 )
 
-// Pending is a manifest field the pinned core may lack, with the core change that adds
-// it. Stage says where the pinned core refuses it: "check" in the package checks
-// (modulekit.Check, the install API), "approve" when the permissions are decided.
-type Pending struct {
-	Field string
-	Core  string
-	Stage string
-	drop  func(top string, ind int, line, key string) bool
-}
-
-// Fields is the one list of the spec's pending manifest fields, each with its CORE item.
-// The package tests assert that the pinned core refuses each of them on its own and
-// accepts the package with all of them taken out, so the list fails loudly once the core
-// accepts any of them.
-var Fields = []Pending{
-	{"container.system_mail", "CORE-05", "check", func(top string, ind int, _, key string) bool {
-		return top == "container" && ind > zero && key == "system_mail"
-	}},
-	{"device_connect", "CORE-28", "check", func(top string, ind int, _, _ string) bool {
-		return ind == zero && top == "device_connect"
-	}},
-	{"notifications", "CORE-03", "check", func(top string, ind int, _, _ string) bool {
-		return ind == zero && top == "notifications"
-	}},
-	{"sidebar.section, subgroup, icon, order and badge", "CORE-08", "check", func(top string, ind int, line, key string) bool {
-		return top == "sidebar" && ind > zero && !strings.HasPrefix(strings.TrimSpace(line), "- ") &&
-			(key == "section" || key == "subgroup" || key == "icon" || key == "order" || key == "badge")
-	}},
-	{"permission module_secrets:write", "CORE-06", "approve", func(top string, _ int, line, _ string) bool {
-		return top == "permissions" && strings.TrimSpace(line) == "- scope: module_secrets:write"
-	}},
-	{"permission mail:system", "CORE-05", "approve", func(top string, _ int, line, _ string) bool {
-		return top == "permissions" && strings.TrimSpace(line) == "- scope: mail:system"
-	}},
-}
-
-// Items is the CORE items of Fields, comma-separated.
-func Items() string {
-	var s []string
-	for _, f := range Fields {
-		s = append(s, f.Core)
-	}
-	return strings.Join(s, ", ")
-}
-
-// Files is the module's package files.
+// Files is the module's package directory's files, pending.yaml included.
 func Files(t testing.TB) map[string][]byte {
 	t.Helper()
 	files, err := email.Files()
@@ -76,80 +27,19 @@ func Files(t testing.TB) map[string][]byte {
 	return files
 }
 
-// Installable is the package files the pinned core installs, and whether they are the
-// full package. When the core refuses the full manifest, the fields of Fields are taken
-// out and the reduced package must pass the core's checks.
-func Installable(t testing.TB) (map[string][]byte, bool) {
+// Installable is the package files the pinned core installs and the parts held back to
+// get there. It fails the test on a refusal pending.yaml doesn't cover.
+func Installable(t testing.TB) (map[string][]byte, []modulekit.Held) {
 	t.Helper()
-	files := Files(t)
-	if _, _, err := modulekit.Check(files); err == nil {
-		return files, true
+	files, held, err := modulekit.Installable(Files(t))
+	if err != nil {
+		t.Fatalf("the pinned core refuses parts pending.yaml doesn't cover: %v", err)
 	}
-	reduced := Reduce(files)
-	if _, _, err := modulekit.Check(reduced); err != nil {
-		t.Fatalf("the package without the core-change fields is refused too: %v", err)
+	for _, h := range held {
+		t.Log(h.String())
 	}
-	t.Logf("the pinned core refuses the full manifest; installing it without %s (%s)", fieldNames(), Items())
-	return reduced, false
+	return files, held
 }
-
-func fieldNames() string {
-	var s []string
-	for _, f := range Fields {
-		s = append(s, f.Field)
-	}
-	return strings.Join(s, "; ")
-}
-
-// Reduce returns files with every field of Fields taken out of the manifest.
-func Reduce(files map[string][]byte) map[string][]byte { return Strip(files, Fields...) }
-
-// Only returns files with every field of Fields but keep taken out.
-func Only(files map[string][]byte, keep Pending) map[string][]byte {
-	var drop []Pending
-	for _, f := range Fields {
-		if f.Field != keep.Field {
-			drop = append(drop, f)
-		}
-	}
-	return Strip(files, drop...)
-}
-
-// Strip returns files with the given fields taken out of the manifest, each with
-// everything indented under it.
-func Strip(files map[string][]byte, fields ...Pending) map[string][]byte {
-	out := make(map[string][]byte, len(files))
-	for k, v := range files {
-		out[k] = v
-	}
-	lines := strings.Split(string(files[modulekit.ManifestFile]), "\n")
-	var kept []string
-	top := ""
-	for i := 0; i < len(lines); i++ {
-		l := lines[i]
-		ind := indent(l)
-		if ind == zero && strings.TrimSpace(l) != "" && !strings.HasPrefix(l, "#") {
-			top, _, _ = strings.Cut(l, ":")
-		}
-		key := strings.TrimPrefix(strings.TrimSpace(l), "- ")
-		key, _, _ = strings.Cut(key, ":")
-		drop := false
-		for _, f := range fields {
-			drop = drop || f.drop(top, ind, l, key)
-		}
-		if !drop {
-			kept = append(kept, l)
-			continue
-		}
-		for i+1 < len(lines) && strings.TrimSpace(lines[i+1]) != "" && indent(lines[i+1]) > ind {
-			i++
-		}
-	}
-	out[modulekit.ManifestFile] = []byte(strings.Join(kept, "\n"))
-	return out
-}
-
-func indent(l string) int { return len(l) - len(strings.TrimLeft(l, " ")) }
 
 // Key is a throwaway Ed25519 signing key made at test time.
 func Key(t testing.TB) (ed25519.PublicKey, ed25519.PrivateKey) {

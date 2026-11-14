@@ -9,7 +9,9 @@
 // them at runtime and they live in the core's module secret store.
 //
 // Packaging and signing go through the core's public module kit (pkg/modulekit): the
-// package command runs the core's install checks, packs the files and signs them.
+// package command holds back the parts of package/pending.yaml the pinned core refuses
+// (modulekit.BuildInstallable), runs the core's install checks on the rest, packs and
+// signs it, and prints each held-back part with the CORE item it waits on.
 package main
 
 import (
@@ -114,12 +116,26 @@ func pack(args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	pkg, err := email.Build(key, nil)
+	pkg, held, err := email.Build(key, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 	if err := os.WriteFile(*out, pkg, packageFileMode); err != nil {
 		log.Fatal(err)
+	}
+	for _, h := range held {
+		fmt.Fprintln(os.Stderr, h.String())
+	}
+	files, err := email.Files()
+	if err != nil {
+		log.Fatal(err)
+	}
+	unused, err := packaging.Unused(files, held)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, e := range unused {
+		fmt.Fprintf(os.Stderr, "pending %s (%s) holds nothing back: the core accepts it or the package no longer has it\n", e.Part(), e.Core)
 	}
 	fmt.Printf("wrote %s\nsigning key (add it as a trusted key):\n%s", *out, packaging.PublicKeyPEM(key))
 }

@@ -15,6 +15,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/CharitonMedia/togavsu/pkg/modulekit"
+
 	"github.com/CharitonMedia/togavsu-email/internal/config"
 	"github.com/CharitonMedia/togavsu-email/internal/coreapi"
 	"github.com/CharitonMedia/togavsu-email/internal/filing"
@@ -111,11 +113,13 @@ func (m *Module) Handler() http.Handler { return m.Server.Handler() }
 // Run runs the sync loop until ctx ends.
 func (m *Module) Run(ctx context.Context) { m.Syncer.Run(ctx) }
 
-// Files returns the package files (manifest and migrations) by package path.
+// Files returns the package directory's files (manifest, migrations and the pending
+// list) by package path.
 func Files() (map[string][]byte, error) { return pkgfiles.Files() }
 
-// Archive packs the package files as the gzip tar the core installs, through the core's
-// public module kit. edit, when set, changes the files first (tests use it).
+// Archive packs the package files the pinned core installs (packaging.Installable) as
+// the gzip tar the core installs, through the core's public module kit. edit, when set,
+// changes the files first (tests use it).
 func Archive(edit func(map[string][]byte)) ([]byte, error) {
 	files, err := Files()
 	if err != nil {
@@ -124,18 +128,23 @@ func Archive(edit func(map[string][]byte)) ([]byte, error) {
 	if edit != nil {
 		edit(files)
 	}
-	return packaging.Archive(files)
+	out, _, err := packaging.Installable(files)
+	if err != nil {
+		return nil, err
+	}
+	return modulekit.Archive(out)
 }
 
 // Build writes the package signed with key as the signed package file the admin
-// installs.
-func Build(key ed25519.PrivateKey, edit func(map[string][]byte)) ([]byte, error) {
+// installs, holding back the pending parts the pinned core refuses, and returns the
+// parts it held back.
+func Build(key ed25519.PrivateKey, edit func(map[string][]byte)) ([]byte, []modulekit.Held, error) {
 	files, err := Files()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if edit != nil {
 		edit(files)
 	}
-	return packaging.Sign(key, files)
+	return packaging.Build(key, files)
 }

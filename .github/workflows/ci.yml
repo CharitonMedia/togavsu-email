@@ -34,9 +34,9 @@ jobs:
         if: ${{ !cancelled() }}
         # -timeout 0 turns off go test's default limit.
         run: go test -race -timeout 0 ./...
-      # The package check step returns when module-core lands:
-      #   go run github.com/CharitonMedia/togavsu/cmd/togavsu-module check package
-      # Until then the pinned core refuses the spec's pending manifest fields, and
-      # internal/packaging's TestPackageDirRefusedOnlyForPendingFields checks the package
-      # dir instead (refused for exactly the fields in internal/kittest, accepted without
-      # them).
+      # The core's install checks on the package, holding back the parts
+      # package/pending.yaml lists that the pinned core refuses. Prints each held part
+      # with its CORE item; fails on any refusal pending.yaml doesn't cover.
+      - name: package check
+        if: ${{ !cancelled() }}
+        run: go run github.com/CharitonMedia/togavsu/cmd/togavsu-module check -installable package

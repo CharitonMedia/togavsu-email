@@ -1,0 +1,32 @@
+# pending.yaml: parts of this package that wait on a core change (docs/SPEC.md, Core
+# changes). The package keeps each part where it belongs; modulekit.Installable holds
+# back only the parts the pinned core refuses, so each one returns on its own once its
+# CORE item lands. This file never ships.
+pending:
+  - field: container.system_mail
+    core: CORE-05
+    reason: Receive the core's system mail at /system-mail to deliver it through the firm's mail.
+  - scope: mail:system
+    core: CORE-05
+    reason: Deliver the core's system mail through the firm's mail.
+  - scope: module_secrets:write
+    core: CORE-06
+    reason: Keep mailbox passwords and sign-in tokens sealed in the core's secret store.
+  - field: notifications
+    core: CORE-03
+    reason: Declare the account_problem and unfiled_mail notification kinds.
+  - field: sidebar[*].section
+    core: CORE-08
+    reason: File the Mail and Unfiled email entries under Communications.
+  - field: sidebar[*].icon
+    core: CORE-08
+    reason: Show the mail and inbox icons beside the sidebar entries.
+  - field: sidebar[*].order
+    core: CORE-08
+    reason: Order the entries within the Communications section.
+  - field: sidebar[*].badge
+    core: CORE-08
+    reason: Show the unfiled count beside Unfiled email.
+  - field: device_connect
+    core: CORE-28
+    reason: Connect the Outlook add-in to a signed-in user through a device grant.

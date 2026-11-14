@@ -3,6 +3,7 @@ package packaging_test
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -13,18 +14,18 @@ import (
 	"github.com/CharitonMedia/togavsu-email/internal/packaging"
 )
 
-// The package directory on disk and the embedded package are the same files. The
-// pinned core's install checks refuse the full manifest, and they refuse it for each
-// pending field of kittest.Fields on its own: with every other pending field taken out,
-// each "check" field alone is still refused. Once the core accepts one, this fails and
-// names it, so the field leaves the list and the CLI check returns to CI.
-func TestPackageDirRefusedOnlyForPendingFields(t *testing.T) {
+// The package directory on disk and the embedded package are the same files, the
+// pending list included.
+func TestPackageDirIsTheEmbeddedPackage(t *testing.T) {
 	disk, err := modulekit.ReadDir("../../package")
 	if err != nil {
 		t.Fatal(err)
 	}
 	delete(disk, "files.go") // the embedding Go file, not a package file
 	embedded := kittest.Files(t)
+	if _, ok := embedded[modulekit.PendingFile]; !ok {
+		t.Fatal("the embedded package has no pending.yaml")
+	}
 	if len(disk) != len(embedded) {
 		t.Fatalf("disk %d files, embedded %d", len(disk), len(embedded))
 	}
@@ -33,102 +34,153 @@ func TestPackageDirRefusedOnlyForPendingFields(t *testing.T) {
 			t.Fatalf("%s differs between the package directory and the embedded package", p)
 		}
 	}
-	if _, _, err := modulekit.Check(disk); err == nil {
-		t.Fatal("the pinned core accepts the full manifest: empty kittest.Fields and restore the togavsu-module check step in ci.yml")
-	}
-	for _, f := range kittest.Fields {
-		_, _, err := modulekit.Check(kittest.Only(disk, f))
-		switch {
-		case f.Stage == "check" && err == nil:
-			t.Errorf("the pinned core now accepts %s (%s): take it out of kittest.Fields", f.Field, f.Core)
-		case f.Stage == "approve" && err != nil:
-			t.Errorf("%s (%s) is refused at install, not at approval: %v", f.Field, f.Core, err)
-		}
-	}
-	raw, err := modulekit.Archive(kittest.Reduce(disk))
-	if err != nil {
-		t.Fatal(err)
-	}
-	pkg, ms, err := modulekit.CheckPackage(raw)
-	if err != nil || pkg.Manifest.ID != "email" || len(ms) != 5 {
-		t.Fatalf("CheckPackage: %v %+v %d", err, pkg, len(ms))
-	}
 }
 
-// The package without the core-change fields passes the pinned core's checks, so the
-// only refusals are those fields.
-func TestReducedPackagePassesTheCoreChecks(t *testing.T) {
-	files := kittest.Reduce(kittest.Files(t))
-	pkg, ms, err := modulekit.Check(files)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pkg.Manifest.ID != "email" || pkg.Manifest.Version != "1.0.0" || len(ms) != 5 {
-		t.Fatalf("%+v, %d migrations", pkg.Manifest, len(ms))
-	}
-	for _, f := range []string{"system_mail:", "device_connect:", "\nnotifications:", "badge:", "icon:"} {
-		if strings.Contains(string(files[modulekit.ManifestFile]), f) {
-			t.Fatalf("reduced manifest still has %s", f)
-		}
-	}
-}
-
-// Built and signed with a throwaway key, the signed package file passes the core's own
-// verification; a tampered file and an untrusted signer are refused with the codes the
-// install API answers.
-func TestSignedPackageVerifies(t *testing.T) {
-	files, full := kittest.Installable(t)
+// The package builds and signs with a key made at runtime, holding back exactly the
+// parts pending.yaml lists: the signed file verifies, its files pass the core's install
+// checks with no refusals, every refusal of the full package is one a pending entry held
+// back, and every pending entry held something back. Once the pinned core accepts a part,
+// its entry holds nothing back and this fails naming it, so the entry leaves the list.
+func TestBuildSignsTheInstallablePackage(t *testing.T) {
+	files := kittest.Files(t)
 	pub, priv := kittest.Key(t)
-	signed, err := packaging.Sign(priv, files)
+	signed, held, err := packaging.Build(priv, files)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Build with a valid key: %v", err)
 	}
+
 	v, ms, err := modulekit.VerifyFile(signed, []modulekit.TrustedKey{modulekit.Trust(pub)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v.Manifest.ID != "email" || len(ms) != 5 {
-		t.Fatalf("verified %+v, %d migrations", v.Manifest, len(ms))
+	if v.ModuleID != email.ID || v.Version != "1.0.0" || len(ms) != 5 {
+		t.Fatalf("verified %s %s, %d migrations", v.ModuleID, v.Version, len(ms))
 	}
-	if full {
-		if again, err := email.Build(priv, nil); err != nil || string(again) != string(signed) {
-			t.Fatalf("email.Build gives other bytes: %v", err)
-		}
+	pkg, err := modulekit.ReadPackage(packageBytes(t, signed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := pkg.Files[modulekit.PendingFile]; ok {
+		t.Fatal("the signed package ships pending.yaml")
+	}
+	if refs := modulekit.CheckAll(pkg.Files); len(refs) != 0 {
+		t.Fatalf("the signed files are refused: %v", refs)
+	}
+	if _, _, err := modulekit.Check(pkg.Files); err != nil {
+		t.Fatal(err)
 	}
 
-	// One byte of the package changed under the same signature.
+	// The same bytes come from the module's own Build and from the kit's.
+	if again, _, err := email.Build(priv, nil); err != nil || string(again) != string(signed) {
+		t.Fatalf("email.Build gives other bytes: %v", err)
+	}
+
+	unused, err := packaging.Unused(files, held)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range unused {
+		t.Errorf("pending %s (%s) holds nothing back: the pinned core accepts it or the package no longer has it; take it out of package/pending.yaml", e.Part(), e.Core)
+	}
+
+	full := make(map[string][]byte, len(files))
+	for k, b := range files {
+		if k != modulekit.PendingFile {
+			full[k] = b
+		}
+	}
+	covered := map[string]bool{}
+	for _, h := range held {
+		if len(h.Refusals) == 0 {
+			t.Errorf("%s held back with no refusal", h)
+		}
+		for _, r := range h.Refusals {
+			covered[r.Where()+" "+r.Code] = true
+		}
+	}
+	for _, r := range modulekit.CheckAll(full) {
+		if !covered[r.Where()+" "+r.Code] {
+			t.Errorf("the pinned core refuses %s (%s) and no pending entry holds it back", r.Where(), r.Code)
+		}
+	}
+}
+
+// A pending list that misses a refusal is refused, and so is one that names a part the
+// package doesn't have: the first fails Build, the second shows in Unused.
+func TestPendingListMustMatchTheRefusals(t *testing.T) {
+	_, priv := kittest.Key(t)
+	files := kittest.Files(t)
+	entries, err := modulekit.ParsePending(files[modulekit.PendingFile])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) == 0 {
+		t.Skip("nothing is pending")
+	}
+
+	missing := copyFiles(files)
+	missing[modulekit.PendingFile] = pendingYAML(entries[1:])
+	_, _, err = packaging.Build(priv, missing)
+	var refs modulekit.Refusals
+	if !errors.As(err, &refs) || len(refs) == 0 {
+		t.Fatalf("built without the entry for %s: %v", entries[0].Part(), err)
+	}
+
+	extra := copyFiles(files)
+	stale := modulekit.Pending{Field: "sidebar[*].subgroup", Core: "CORE-08", Reason: "A part this package doesn't have."}
+	extra[modulekit.PendingFile] = pendingYAML(append(append([]modulekit.Pending(nil), entries...), stale))
+	_, held, err := packaging.Build(priv, extra)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unused, err := packaging.Unused(extra, held)
+	if err != nil || len(unused) != 1 || unused[0].Part() != stale.Part() {
+		t.Fatalf("unused %+v: %v", unused, err)
+	}
+}
+
+// One byte of the signed package changed under the same signature, and a signer the
+// admin doesn't trust, are refused with the codes the install API answers.
+func TestSignedPackageRefusesTamperAndUntrustedSigner(t *testing.T) {
+	pub, priv := kittest.Key(t)
+	signed, _, err := packaging.Build(priv, kittest.Files(t))
+	if err != nil {
+		t.Fatal(err)
+	}
 	var sp modulekit.SignedPackage
 	if err := json.Unmarshal(signed, &sp); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := base64.StdEncoding.DecodeString(sp.PackageBase64)
-	if err != nil {
-		t.Fatal(err)
-	}
+	raw := packageBytes(t, signed)
 	raw[len(raw)/2] ^= 0xff
 	sp.PackageBase64 = base64.StdEncoding.EncodeToString(raw)
 	tampered, _ := json.Marshal(sp)
 	if _, _, err := modulekit.VerifyFile(tampered, []modulekit.TrustedKey{modulekit.Trust(pub)}); modulekit.Code(err) != modulekit.CodeTampered {
 		t.Fatalf("tampered package: %v (code %q)", err, modulekit.Code(err))
 	}
-
 	other, _ := kittest.Key(t)
 	if _, _, err := modulekit.VerifyFile(signed, []modulekit.TrustedKey{modulekit.Trust(other)}); err == nil {
 		t.Fatal("an untrusted signer verified")
 	}
 }
 
-// The package command's path refuses to sign a package the core's checks refuse, as the
-// kit's own package command does.
-func TestSignRefusesWhatTheCoreRefuses(t *testing.T) {
+// Build refuses to sign a package with a refusal no pending entry covers, as the kit's
+// own package command does.
+func TestBuildRefusesWhatTheCoreRefuses(t *testing.T) {
 	_, priv := kittest.Key(t)
-	files := kittest.Reduce(kittest.Files(t))
+	files := kittest.Files(t)
 	files["migrations/0006_bad.sql"] = []byte("CREATE TABLE core.stolen (id int);\n")
-	if _, err := packaging.Sign(priv, files); modulekit.Code(err) != modulekit.CodeMigration {
+	_, _, err := packaging.Build(priv, files)
+	var refs modulekit.Refusals
+	if !errors.As(err, &refs) || refs[0].Kind != modulekit.KindMigration || refs[0].File != "migrations/0006_bad.sql" {
 		t.Fatalf("signed a refused package: %v", err)
 	}
-	if _, err := packaging.Archive(files); err == nil {
+	if _, err := email.Archive(func(f map[string][]byte) { f["migrations/0006_bad.sql"] = files["migrations/0006_bad.sql"] }); err == nil {
 		t.Fatal("archived a refused package")
+	}
+	// The kit's Build won't sign the package directory with its pending list in it.
+	if _, err := modulekit.Build(priv, kittest.Files(t)); !errors.As(err, &refs) || refs[0].Code != modulekit.RefusePendingUnbuilt {
+		t.Fatalf("modulekit.Build on the pending package: %v", err)
 	}
 }
 
@@ -154,4 +206,44 @@ func TestModuleSourceSettingsCheck(t *testing.T) {
 	if err := modulekit.CheckSource("../.."); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// packageBytes is the package archive inside a signed package file.
+func packageBytes(t *testing.T, signed []byte) []byte {
+	t.Helper()
+	var sp modulekit.SignedPackage
+	if err := json.Unmarshal(signed, &sp); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := base64.StdEncoding.DecodeString(sp.PackageBase64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+func copyFiles(files map[string][]byte) map[string][]byte {
+	out := make(map[string][]byte, len(files))
+	for k, v := range files {
+		out[k] = v
+	}
+	return out
+}
+
+// pendingYAML writes entries as a pending list.
+func pendingYAML(entries []modulekit.Pending) []byte {
+	var b strings.Builder
+	b.WriteString("pending:\n")
+	for _, e := range entries {
+		switch {
+		case e.Field != "":
+			b.WriteString("  - field: " + e.Field + "\n")
+		case e.Scope != "":
+			b.WriteString("  - scope: " + e.Scope + "\n")
+		default:
+			b.WriteString("  - migration: " + e.Migration + "\n")
+		}
+		b.WriteString("    core: " + e.Core + "\n    reason: " + e.Reason + "\n")
+	}
+	return []byte(b.String())
 }

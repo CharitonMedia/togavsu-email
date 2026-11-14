@@ -57,11 +57,10 @@ type kcore struct {
 	m     *email.Module
 	boxes *fake.Set
 	logs  *syncBuffer
+	// files is the package as the pinned core installs it (kittest.Installable).
 	files map[string][]byte
-	// full is whether the pinned core installs the whole manifest (see kittest).
-	full bool
-	pub  ed25519.PublicKey
-	key  ed25519.PrivateKey
+	pub   ed25519.PublicKey
+	key   ed25519.PrivateKey
 }
 
 // newCore starts the composed core, installs the module's signed package as the admin
@@ -93,7 +92,7 @@ func install(t *testing.T) *kcore {
 			Log: slog.New(slog.NewTextHandler(k.logs, nil)), Factory: k.boxes.Factory(), TempDir: t.TempDir()})
 		return k.m.Handler()
 	})
-	k.files, k.full = kittest.Installable(t)
+	k.files, _ = kittest.Installable(t)
 	pub, priv := kittest.Key(t)
 	k.pub, k.key = pub, priv
 	k.TrustKey("Email module test key", pub)

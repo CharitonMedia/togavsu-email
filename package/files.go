@@ -1,4 +1,6 @@
-// Package pkgfiles embeds the module package: the manifest and its migrations.
+// Package pkgfiles embeds the module package directory: the manifest, its migrations and
+// the pending list (pending.yaml) of the parts that wait on core changes. The pending
+// list never ships; modulekit.Installable leaves it out.
 package pkgfiles
 
 import (
@@ -10,14 +12,14 @@ import (
 	"strings"
 )
 
-//go:embed togavsu-module.yaml migrations/*.sql
+//go:embed togavsu-module.yaml pending.yaml migrations/*.sql
 var packageFS embed.FS
 
 // manifestFile is the manifest's path in the package. This directory is the package
 // itself, so its Go files carry no fixed.go of their own.
 const manifestFile = "togavsu-module.yaml"
 
-// Files returns the package files by package path.
+// Files returns the package directory's files by package path, pending.yaml included.
 func Files() (map[string][]byte, error) {
 	out := map[string][]byte{}
 	err := fs.WalkDir(packageFS, ".", func(p string, d fs.DirEntry, err error) error {
