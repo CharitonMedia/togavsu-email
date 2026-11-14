@@ -86,9 +86,9 @@ func (m Msg) Raw() []byte {
 			b.WriteString("Content-Disposition: attachment; filename=\"" + a.Name + "\"\r\n\r\n")
 		}
 		enc := base64.StdEncoding.EncodeToString(a.Data)
-		for len(enc) > 76 {
-			b.WriteString(enc[:76] + "\r\n")
-			enc = enc[76:]
+		for len(enc) > base64Line {
+			b.WriteString(enc[:base64Line] + "\r\n")
+			enc = enc[base64Line:]
 		}
 		b.WriteString(enc + "\r\n")
 	}

@@ -64,7 +64,7 @@ func (s *Server) suggestions(ctx context.Context, v Viewer, messageID string, li
 	}
 	out := []Suggestion{}
 	for _, c := range ms {
-		if limit > 0 && len(out) >= limit {
+		if limit > zero && len(out) >= limit {
 			break
 		}
 		m, err := s.Core.GetMatter(ctx, v.Auth(), c.MatterID)
@@ -84,7 +84,7 @@ func (s *Server) row(ctx context.Context, v Viewer, m store.Message, limit int) 
 	if err != nil {
 		return QueueRow{}, err
 	}
-	n := 0
+	n := zero
 	for _, p := range parts {
 		if !p.Inline {
 			n++
@@ -115,13 +115,13 @@ func (s *Server) queue(ctx context.Context, v Viewer, filter, account string, li
 }
 
 func (s *Server) queueList(w http.ResponseWriter, r *http.Request, v Viewer) error {
-	ms, err := s.queue(r.Context(), v, r.URL.Query().Get("filter"), r.URL.Query().Get("account_id"), 500)
+	ms, err := s.queue(r.Context(), v, r.URL.Query().Get("filter"), r.URL.Query().Get("account_id"), listMax)
 	if err != nil {
 		return err
 	}
 	rows := []QueueRow{}
 	for _, m := range ms {
-		row, err := s.row(r.Context(), v, m, 1)
+		row, err := s.row(r.Context(), v, m, one)
 		if err != nil {
 			return err
 		}
@@ -136,7 +136,7 @@ func (s *Server) queueRow(w http.ResponseWriter, r *http.Request, v Viewer) erro
 	if err != nil {
 		return err
 	}
-	row, err := s.row(r.Context(), v, m, 0)
+	row, err := s.row(r.Context(), v, m, zero)
 	if err != nil {
 		return err
 	}
@@ -146,7 +146,7 @@ func (s *Server) queueRow(w http.ResponseWriter, r *http.Request, v Viewer) erro
 
 // badge counts the queue rows the viewer may see (the sidebar's unfiled count).
 func (s *Server) badge(w http.ResponseWriter, r *http.Request, v Viewer) error {
-	ms, err := s.queue(r.Context(), v, "", "", 0)
+	ms, err := s.queue(r.Context(), v, "", "", zero)
 	if err != nil {
 		return err
 	}
@@ -343,7 +343,7 @@ func (s *Server) deferAll(w http.ResponseWriter, r *http.Request, v Viewer) erro
 	if err := decode(r, &b); err != nil {
 		return err
 	}
-	ms, err := s.queue(ctx, v, b.Filter, b.AccountID, 0)
+	ms, err := s.queue(ctx, v, b.Filter, b.AccountID, zero)
 	if err != nil {
 		return err
 	}
@@ -351,7 +351,7 @@ func (s *Server) deferAll(w http.ResponseWriter, r *http.Request, v Viewer) erro
 		writeJSON(w, http.StatusConflict, map[string]any{"code": "confirm_count", "detail": "confirm the number of rows to defer", "count": len(ms)})
 		return nil
 	}
-	n := 0
+	n := zero
 	for _, m := range ms {
 		if m.Status == "deferred" {
 			continue
@@ -368,7 +368,7 @@ func (s *Server) matterSearch(w http.ResponseWriter, r *http.Request, v Viewer) 
 	if !v.Staff() {
 		return errNotFound
 	}
-	ms, err := s.Core.ListMatters(r.Context(), v.Auth(), r.URL.Query().Get("q"), 20)
+	ms, err := s.Core.ListMatters(r.Context(), v.Auth(), r.URL.Query().Get("q"), matterPickRows)
 	if err != nil {
 		return err
 	}

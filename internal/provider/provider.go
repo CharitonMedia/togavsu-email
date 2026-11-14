@@ -157,7 +157,7 @@ func KindFor(name, special string) string {
 	}
 	// A subfolder of a skipped folder is skipped too.
 	for _, sep := range []string{"/", "."} {
-		if i := strings.Index(n, sep); i > 0 {
+		if i := strings.Index(n, sep); i > zero {
 			if k, ok := skipNames[n[:i]]; ok && k != KindInbox {
 				if k == KindSent {
 					return KindSkip

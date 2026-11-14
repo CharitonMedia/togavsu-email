@@ -81,7 +81,7 @@ func (m *Mailbox) addFolderLocked(name string) *folder {
 	if f, ok := m.folders[name]; ok {
 		return f
 	}
-	f := &folder{name: name, uidValidity: uint32(len(m.folders) + 1000), nextUID: 1, msgs: map[uint32]*msg{}}
+	f := &folder{name: name, uidValidity: uint32(len(m.folders) + 1000), nextUID: one, msgs: map[uint32]*msg{}}
 	m.folders[name] = f
 	return f
 }
@@ -98,7 +98,7 @@ func (m *Mailbox) Deliver(folderName string, raw []byte) provider.Ref {
 }
 
 func ref(f *folder, uid uint32) provider.Ref {
-	return provider.Ref{Folder: f.name, ID: strconv.FormatUint(uint64(f.uidValidity), 10) + "." + strconv.FormatUint(uint64(uid), 10)}
+	return provider.Ref{Folder: f.name, ID: strconv.FormatUint(uint64(f.uidValidity), decimal) + "." + strconv.FormatUint(uint64(uid), decimal)}
 }
 
 // ChangeUIDValidity renumbers a folder the way a server does after a rebuild: a new
@@ -107,7 +107,7 @@ func (m *Mailbox) ChangeUIDValidity(folderName string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	f := m.folders[folderName]
-	f.uidValidity += 100
+	f.uidValidity += uidValidityStep
 	old := f.msgs
 	f.msgs = map[uint32]*msg{}
 	uids := make([]int, 0, len(old))
@@ -115,7 +115,7 @@ func (m *Mailbox) ChangeUIDValidity(folderName string) {
 		uids = append(uids, int(u))
 	}
 	sort.Ints(uids)
-	f.nextUID = 1
+	f.nextUID = one
 	for _, u := range uids {
 		mm := old[uint32(u)]
 		mm.uid = f.nextUID
@@ -162,7 +162,7 @@ func (m *Mailbox) FolderCount(name string) int {
 	if f, ok := m.folders[name]; ok {
 		return len(f.msgs)
 	}
-	return 0
+	return zero
 }
 
 // Seen reports a message's read flag.
@@ -195,7 +195,7 @@ func (m *Mailbox) find(r provider.Ref) (*folder, uint32, bool) {
 		return nil, 0, false
 	}
 	v, u, _ := strings.Cut(r.ID, ".")
-	if v != strconv.FormatUint(uint64(f.uidValidity), 10) {
+	if v != strconv.FormatUint(uint64(f.uidValidity), decimal) {
 		return nil, 0, false
 	}
 	n, err := strconv.ParseUint(u, 10, 32)
@@ -254,7 +254,7 @@ func (m *Mailbox) Changes(_ context.Context, fl provider.Folder, cur provider.Cu
 	}
 	last := cur.LastUID
 	if cur.UIDValidity != f.uidValidity || m.StaleCursor {
-		last = 0
+		last = zero
 	}
 	var uids []int
 	for u, mm := range f.msgs {
@@ -263,7 +263,7 @@ func (m *Mailbox) Changes(_ context.Context, fl provider.Folder, cur provider.Cu
 		}
 	}
 	sort.Ints(uids)
-	if limit > 0 && len(uids) > limit {
+	if limit > zero && len(uids) > limit {
 		uids = uids[:limit]
 	}
 	next := provider.Cursor{UIDValidity: f.uidValidity, LastUID: last}
@@ -381,7 +381,7 @@ func (m *Mailbox) Send(_ context.Context, raw []byte, env provider.Envelope) (st
 	if m.FailSend != nil {
 		return "", m.FailSend
 	}
-	id := "fake-" + mailparse.Sum(raw)[:16]
+	id := "fake-" + mailparse.Sum(raw)[:sentIDChars]
 	m.sent = append(m.sent, Sent{Raw: append([]byte(nil), raw...), Env: env, ID: id})
 	return id, nil
 }

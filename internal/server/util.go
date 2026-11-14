@@ -9,7 +9,7 @@ import (
 func msTime(ms int64) time.Time { return time.UnixMilli(ms).UTC() }
 
 func randomKey() string {
-	b := make([]byte, 12)
+	b := make([]byte, randomKeyBytes)
 	if _, err := rand.Read(b); err != nil {
 		panic(err)
 	}

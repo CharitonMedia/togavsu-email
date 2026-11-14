@@ -9,10 +9,13 @@ package email
 
 import (
 	"context"
+	"crypto/ed25519"
 	"database/sql"
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/CharitonMedia/togavsu/pkg/modulekit"
 
 	"github.com/CharitonMedia/togavsu-email/internal/config"
 	"github.com/CharitonMedia/togavsu-email/internal/coreapi"
@@ -82,7 +85,7 @@ func New(c Config) *Module {
 		if err != nil {
 			return config.Settings{}, err
 		}
-		return config.Parse(m), nil
+		return config.Parse(m)
 	}
 	op := &mailbox.Opener{Core: core, Factory: c.Factory, Settings: settings, TokenURL: c.OAuthToken, APIBase: c.APIBase}
 	filer := &filing.Filer{Store: st, Core: core, Mailbox: op.Open, TempDir: c.TempDir}
@@ -110,13 +113,13 @@ func (m *Module) Handler() http.Handler { return m.Server.Handler() }
 // Run runs the sync loop until ctx ends.
 func (m *Module) Run(ctx context.Context) { m.Syncer.Run(ctx) }
 
-// Files returns the package files (manifest and migrations) by package path.
+// Files returns the package directory's files (manifest, migrations and the pending
+// list) by package path.
 func Files() (map[string][]byte, error) { return pkgfiles.Files() }
 
-// Archive and Build wait on the core's public packaging and signing: the module must
-// not copy the core's internal marketplace code, which would drift from what the core
-// verifies. They answer packaging.ErrUnavailable until the core publishes a package or
-// CLI; packaging.Default is the one place to plug it in.
+// Archive packs the package files the pinned core installs (packaging.Installable) as
+// the gzip tar the core installs, through the core's public module kit. edit, when set,
+// changes the files first (tests use it).
 func Archive(edit func(map[string][]byte)) ([]byte, error) {
 	files, err := Files()
 	if err != nil {
@@ -125,18 +128,23 @@ func Archive(edit func(map[string][]byte)) ([]byte, error) {
 	if edit != nil {
 		edit(files)
 	}
-	return packaging.Default.Archive(files)
-}
-
-// Build writes the package signed with seed's key as the marketplace's signed package
-// file.
-func Build(seed []byte, edit func(map[string][]byte)) ([]byte, error) {
-	files, err := Files()
+	ip, err := packaging.Installable(files)
 	if err != nil {
 		return nil, err
+	}
+	return modulekit.Archive(ip.Files)
+}
+
+// Build writes the package signed with key as the signed package file the admin
+// installs, holding back the pending parts the pinned core refuses, and returns the
+// parts it held back and the entries that held nothing back (packaging.Installable).
+func Build(key ed25519.PrivateKey, edit func(map[string][]byte)) ([]byte, modulekit.InstallablePackage, error) {
+	files, err := Files()
+	if err != nil {
+		return nil, modulekit.InstallablePackage{}, err
 	}
 	if edit != nil {
 		edit(files)
 	}
-	return packaging.Default.SignedPackage(seed, files)
+	return packaging.Build(key, files)
 }

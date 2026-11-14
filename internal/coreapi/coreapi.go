@@ -61,16 +61,21 @@ func StatusOf(err error) int {
 	if errors.As(err, &e) {
 		return e.Status
 	}
-	return 0
+	return zero
 }
 
 // IsNotFound reports a core not_found answer.
 func IsNotFound(err error) bool { return StatusOf(err) == http.StatusNotFound }
 
-// IsScopeDenied reports a core scope_denied answer.
+// IsScopeDenied reports a refusal for a scope the module was not granted: code
+// scope_denied, as the contract names it, or the 403 forbidden "token is missing a
+// scope" the core's API routes answer it with (they map scope_denied to forbidden).
 func IsScopeDenied(err error) bool {
 	var e *Error
-	return errors.As(err, &e) && e.Code == "scope_denied"
+	if !errors.As(err, &e) {
+		return false
+	}
+	return e.Code == "scope_denied" || e.Status == http.StatusForbidden && e.Code == "forbidden" && strings.Contains(e.Detail, "missing a scope")
 }
 
 // Client calls the core with the module's token.
@@ -125,14 +130,18 @@ func (c *Client) Call(ctx context.Context, method, path string, a Auth, idem str
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		var p struct {
-			Code   string `json:"code"`
-			Detail string `json:"detail"`
+			Code    string `json:"code"`
+			Detail  string `json:"detail"`
+			Message string `json:"message"`
 		}
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 		_ = json.Unmarshal(raw, &p)
-		return &Error{Status: resp.StatusCode, Code: p.Code, Detail: p.Detail, Path: method + " " + strings.SplitN(path, "?", 2)[0]}
+		if p.Detail == "" {
+			p.Detail = p.Message
+		}
+		return &Error{Status: resp.StatusCode, Code: p.Code, Detail: p.Detail, Path: method + " " + strings.SplitN(path, "?", two)[zero]}
 	}
 	if out == nil {
 		_, _ = io.Copy(io.Discard, resp.Body)
@@ -295,8 +304,8 @@ type MatchAnswer struct {
 }
 
 func trim50(s []string) []string {
-	if len(s) > 50 {
-		return s[:50]
+	if len(s) > matchEntriesMax {
+		return s[:matchEntriesMax]
 	}
 	if s == nil {
 		return []string{}
@@ -452,7 +461,7 @@ func (c *Client) PublishFile(ctx context.Context, a Auth, key, matterID, name, m
 		return File{}, err
 	}
 	chunk := up.ChunkSizeBytes
-	if chunk <= 0 {
+	if chunk <= zero {
 		chunk = 8 << 20
 	}
 	for off := int64(0); off < int64(len(data)); off += chunk {

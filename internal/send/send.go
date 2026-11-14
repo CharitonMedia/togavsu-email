@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -129,7 +130,7 @@ func (s *Sender) pickAccount(ctx context.Context, v coreapi.ViewerInfo, want str
 
 func newMessageID(addr string) string {
 	domain := "togavsu.invalid"
-	if i := strings.LastIndexByte(addr, '@'); i >= 0 {
+	if i := strings.LastIndexByte(addr, '@'); i >= zero {
 		domain = addr[i+1:]
 	}
 	return "<" + ids.New(time.Now()) + "@" + domain + ">"
@@ -164,7 +165,7 @@ func (s *Sender) Send(ctx context.Context, v Viewer, c Compose) (Result, error) 
 	if strings.TrimSpace(c.Body) == "" {
 		return Result{}, &Invalid{"body", "the message is empty"}
 	}
-	if len(c.Subject) > 998 || strings.ContainsAny(c.Subject, "\r\n") {
+	if len(c.Subject) > subjectMax || strings.ContainsAny(c.Subject, "\r\n") {
 		return Result{}, &Invalid{"subject", "one line of at most 998 characters"}
 	}
 	auth := coreapi.Viewer(v.Token)
@@ -189,7 +190,7 @@ func (s *Sender) Send(ctx context.Context, v Viewer, c Compose) (Result, error) 
 	}
 	if c.MatterID != "" {
 		if _, err := s.Core.GetMatter(ctx, auth, c.MatterID); err != nil {
-			if coreapi.IsNotFound(err) || coreapi.StatusOf(err) == 403 {
+			if coreapi.IsNotFound(err) || coreapi.StatusOf(err) == http.StatusForbidden {
 				return Result{}, ErrNotFound
 			}
 			return Result{}, err
@@ -199,11 +200,11 @@ func (s *Sender) Send(ctx context.Context, v Viewer, c Compose) (Result, error) 
 	type fileVer struct{ file, version string }
 	inMatter := map[string]string{}
 	var used []fileVer
-	total := 0
+	total := zero
 	for _, id := range c.FileIDs {
 		f, err := s.Core.GetFile(ctx, auth, id)
 		if err != nil {
-			if coreapi.IsNotFound(err) || coreapi.StatusOf(err) == 403 {
+			if coreapi.IsNotFound(err) || coreapi.StatusOf(err) == http.StatusForbidden {
 				return Result{}, ErrNotFound
 			}
 			return Result{}, err
@@ -243,7 +244,7 @@ func (s *Sender) Send(ctx context.Context, v Viewer, c Compose) (Result, error) 
 	}
 	key := c.IdempotencyKey
 	if key == "" {
-		key = "compose-" + ids.Secret(16)
+		key = "compose-" + ids.Secret(composeKeyBytes)
 	}
 	msg := Message{From: acct.Address, To: c.To, Cc: c.Cc, Subject: c.Subject, Text: c.Body, MessageID: newMessageID(acct.Address), Date: s.now(), Attachments: atts}
 	if original != nil && kind == "reply" {

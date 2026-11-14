@@ -61,7 +61,7 @@ func (s *Server) inboxPage(w http.ResponseWriter, r *http.Request, v Viewer) err
 		return err
 	}
 	ids := ownAccountIDs(own)
-	rows, err := s.Store.Inbox(ctx, ids, folder, 100)
+	rows, err := s.Store.Inbox(ctx, ids, folder, inboxRows)
 	if err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func (s *Server) inboxAPI(w http.ResponseWriter, r *http.Request, v Viewer) erro
 	if folder != "sent" {
 		folder = "inbox"
 	}
-	rows, err := s.Store.Inbox(r.Context(), ownAccountIDs(own), folder, 100)
+	rows, err := s.Store.Inbox(r.Context(), ownAccountIDs(own), folder, inboxRows)
 	if err != nil {
 		return err
 	}
@@ -171,13 +171,13 @@ func (s *Server) preview(w http.ResponseWriter, r *http.Request, v Viewer) error
 func (s *Server) unfiledPage(w http.ResponseWriter, r *http.Request, v Viewer) error {
 	ctx := r.Context()
 	filter, account := r.URL.Query().Get("filter"), r.URL.Query().Get("account_id")
-	ms, err := s.queue(ctx, v, filter, account, 500)
+	ms, err := s.queue(ctx, v, filter, account, listMax)
 	if err != nil {
 		return err
 	}
 	var rows []QueueRow
 	for _, m := range ms {
-		row, err := s.row(ctx, v, m, 1)
+		row, err := s.row(ctx, v, m, one)
 		if err != nil {
 			return err
 		}
@@ -192,14 +192,14 @@ func (s *Server) fileDialog(w http.ResponseWriter, r *http.Request, v Viewer) er
 	if err != nil {
 		return err
 	}
-	row, err := s.row(ctx, v, m, 0)
+	row, err := s.row(ctx, v, m, zero)
 	if err != nil {
 		return err
 	}
 	q := r.URL.Query().Get("q")
 	var found []coreapi.Matter
 	if q != "" {
-		if found, err = s.Core.ListMatters(ctx, v.Auth(), q, 20); err != nil {
+		if found, err = s.Core.ListMatters(ctx, v.Auth(), q, matterPickRows); err != nil {
 			return err
 		}
 	}
@@ -283,7 +283,7 @@ func (s *Server) matterPage(w http.ResponseWriter, r *http.Request, v Viewer) er
 	if id == "" {
 		id = r.URL.Query().Get("matter_id")
 	}
-	fs, err := s.matterFilings(r.Context(), v, id, 500)
+	fs, err := s.matterFilings(r.Context(), v, id, listMax)
 	if err != nil {
 		return err
 	}
@@ -295,7 +295,7 @@ func (s *Server) recentPage(w http.ResponseWriter, r *http.Request, v Viewer) er
 	if id == "" {
 		id = r.URL.Query().Get("matter_id")
 	}
-	fs, err := s.matterFilings(r.Context(), v, id, 5)
+	fs, err := s.matterFilings(r.Context(), v, id, matterRecentRows)
 	if err != nil {
 		return err
 	}
@@ -303,7 +303,7 @@ func (s *Server) recentPage(w http.ResponseWriter, r *http.Request, v Viewer) er
 }
 
 func (s *Server) matterMail(w http.ResponseWriter, r *http.Request, v Viewer) error {
-	fs, err := s.matterFilings(r.Context(), v, r.PathValue("id"), 500)
+	fs, err := s.matterFilings(r.Context(), v, r.PathValue("id"), listMax)
 	if err != nil {
 		return err
 	}
@@ -489,7 +489,7 @@ func (s *Server) inboxWidget(w http.ResponseWriter, r *http.Request, v Viewer) e
 		folder = "inbox"
 	}
 	ids := ownAccountIDs(own)
-	rows, err := s.Store.Inbox(ctx, ids, folder, 10)
+	rows, err := s.Store.Inbox(ctx, ids, folder, inboxWidgetRows)
 	if err != nil {
 		return err
 	}
@@ -497,7 +497,7 @@ func (s *Server) inboxWidget(w http.ResponseWriter, r *http.Request, v Viewer) e
 	if err != nil {
 		return err
 	}
-	q, err := s.queue(ctx, v, "", "", 0)
+	q, err := s.queue(ctx, v, "", "", zero)
 	if err != nil {
 		return err
 	}
@@ -506,13 +506,13 @@ func (s *Server) inboxWidget(w http.ResponseWriter, r *http.Request, v Viewer) e
 
 func (s *Server) unfiledWidget(w http.ResponseWriter, r *http.Request, v Viewer) error {
 	ctx := r.Context()
-	ms, err := s.queue(ctx, v, "", r.URL.Query().Get("account_id"), 8)
+	ms, err := s.queue(ctx, v, "", r.URL.Query().Get("account_id"), unfiledWidgetRows)
 	if err != nil {
 		return err
 	}
 	var rows []QueueRow
 	for _, m := range ms {
-		row, err := s.row(ctx, v, m, 1)
+		row, err := s.row(ctx, v, m, one)
 		if err != nil {
 			return err
 		}
@@ -520,9 +520,6 @@ func (s *Server) unfiledWidget(w http.ResponseWriter, r *http.Request, v Viewer)
 	}
 	return renderPage(w, http.StatusOK, widgetUnfiledTpl, map[string]any{"Title": "Unfiled email", "Rows": rows})
 }
-
-// SearchLimit is the most results a search returns.
-const SearchLimit = 25
 
 // Search matches subject, from, to and body. Filed messages come back only when the
 // core lets the viewer read their matter; personal mail only to its owner; firm queue
@@ -532,7 +529,7 @@ func (s *Server) Search(ctx context.Context, v Viewer, q string) ([]store.Messag
 	if strings.TrimSpace(q) == "" || !v.Staff() {
 		return out, nil
 	}
-	ms, err := s.Store.Search(ctx, q, 500)
+	ms, err := s.Store.Search(ctx, q, listMax)
 	if err != nil {
 		return nil, err
 	}

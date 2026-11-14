@@ -20,18 +20,9 @@ import (
 	"github.com/CharitonMedia/togavsu-email/internal/store"
 )
 
-// RetryAfter is the wait after each failed fetch or parse; after the last the row shows
-// in the queue as error with Retry.
-var RetryAfter = []time.Duration{5 * time.Minute, 30 * time.Minute, 2 * time.Hour, 12 * time.Hour}
-
-// RematchEvery is the sweep of the unfiled queue.
-const RematchEvery = time.Hour
-
-// UnfiledNoticeGap is the least time between two unfiled_mail notices to one person.
-const UnfiledNoticeGap = 15 * time.Minute
-
-// BatchLimit is how many new messages one folder reads per run.
-const BatchLimit = 200
+// RetryAfter is the wait after each failed fetch or parse (spec: 5 minutes, 30 minutes,
+// 2 hours and 12 hours); after the last the row shows in the queue as error with Retry.
+var RetryAfter = []time.Duration{five * minute, five * (five + one) * minute, two * hour, (ten + two) * hour}
 
 // Syncer is the mail loop.
 type Syncer struct {
@@ -74,7 +65,7 @@ func (s *Syncer) Kick() {
 // Run loops until ctx ends, one pass a minute; each account syncs when its poll
 // interval has passed.
 func (s *Syncer) Run(ctx context.Context) {
-	t := time.NewTicker(time.Minute)
+	t := time.NewTicker(tick)
 	defer t.Stop()
 	for {
 		if err := s.Pass(ctx, false); err != nil && ctx.Err() == nil {
@@ -219,7 +210,7 @@ func (s *Syncer) SyncAccount(ctx context.Context, a store.Account, st config.Set
 		return s.accountFailed(ctx, a, err)
 	}
 	since := time.UnixMilli(a.SyncFrom)
-	if a.SyncFrom == 0 {
+	if a.SyncFrom == zero {
 		since = s.now().Add(-st.Backfill)
 	}
 	for _, f := range folders {
@@ -283,7 +274,7 @@ func direction(a store.Account, kind string, pm *mailparse.Message, domains []st
 		at := strings.LastIndexByte(f, '@')
 		firm := false
 		for _, d := range domains {
-			firm = firm || (at >= 0 && strings.EqualFold(f[at+1:], d))
+			firm = firm || (at >= zero && strings.EqualFold(f[at+one:], d))
 		}
 		if !firm {
 			return "inbound"
@@ -352,7 +343,7 @@ func Record(pm *mailparse.Message, a store.Account, folder store.Folder, ref, di
 func (s *Syncer) failedFetch(ctx context.Context, a store.Account, folder store.Folder, ref string, cause error) error {
 	next := s.now().Add(RetryAfter[0]).UnixMilli()
 	m := store.Message{AccountID: a.ID, FolderID: folder.ID, ProviderRef: ref, RFCMessageID: "<pending-" + ref + "@togavsu.invalid>",
-		Status: "pending", Attempts: 1, NextAttemptAt: &next, Error: cause.Error(), Subject: "(not read yet)"}
+		Status: "pending", Attempts: one, NextAttemptAt: &next, Error: cause.Error(), Subject: "(not read yet)"}
 	_, err := s.Store.Claim(ctx, &m)
 	return err
 }
@@ -505,7 +496,7 @@ func (s *Syncer) NotifyUnfiled(ctx context.Context) error {
 			continue
 		}
 		title := "1 email waits to be filed"
-		if counts[u] > 1 {
+		if counts[u] > one {
 			title = fmt.Sprintf("%d emails wait to be filed", counts[u])
 		}
 		if err := s.Core.Notify(ctx, "unfiled-"+u+"-"+fmt.Sprint(s.now().UnixMilli()), u, "unfiled_mail", title, "/modules/email/tabs/unfiled"); err != nil {

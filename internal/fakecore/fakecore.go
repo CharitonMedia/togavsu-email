@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/CharitonMedia/togavsu-email/internal/ids"
+	pkgfiles "github.com/CharitonMedia/togavsu-email/package"
 )
 
 // Module is the module id the fake serves.
@@ -171,7 +172,7 @@ type Core struct {
 
 // New returns a fake core with every scope the manifest asks for granted.
 func New() *Core {
-	c := &Core{Token: "fake-module-token-" + ids.Secret(8), Users: map[string]*User{}, Matters: map[string]*Matter{}, Contacts: map[string]*Contact{},
+	c := &Core{Token: "fake-module-token-" + ids.Secret(moduleTokenBytes), Users: map[string]*User{}, Matters: map[string]*Matter{}, Contacts: map[string]*Contact{},
 		Files: map[string]*File{}, Notes: map[string]*Note{}, Secrets: map[string]string{}, Settings: map[string]string{}, Scopes: map[string]bool{},
 		uploads: map[string]*upload{}, tokens: map[string]ctxToken{}, devices: map[string]*device{}, grants: map[string]*grant{}, idem: map[string]saved{},
 		ChunkSize: 1 << 20}
@@ -225,7 +226,7 @@ func (c *Core) AddMatter(number, name, status, caseNumber string, clients ...*Co
 	c.Matters[m.ID] = m
 	c.insert("matters", m.ID)
 	for i, ct := range clients {
-		c.Parties = append(c.Parties, &Party{ID: ids.Now(), MatterID: m.ID, ContactID: ct.ID, Role: "client", Primary: i == 0})
+		c.Parties = append(c.Parties, &Party{ID: ids.Now(), MatterID: m.ID, ContactID: ct.ID, Role: "client", Primary: i == zero})
 	}
 	return m
 }
@@ -269,7 +270,7 @@ func (c *Core) AddFile(m *Matter, name, mediaType string, data []byte, by *User)
 func (c *Core) ContextFor(u *User, matterID string) string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	t := "ctx-" + ids.Secret(12)
+	t := "ctx-" + ids.Secret(tokenBytes)
 	c.tokens[t] = ctxToken{userID: u.ID, matterID: matterID}
 	return t
 }
@@ -278,7 +279,7 @@ func (c *Core) ContextFor(u *User, matterID string) string {
 func (c *Core) NewDevice(u *User) string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := "dev-" + ids.Secret(12)
+	s := "dev-" + ids.Secret(tokenBytes)
 	c.devices[s] = &device{userID: u.ID}
 	return s
 }
@@ -375,12 +376,12 @@ func (c *Core) op(scopes []string, modes string, f opFunc) http.HandlerFunc {
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		if r.Header.Get("Authorization") != "Bearer "+c.Token {
-			problem(w, 401, "unauthenticated", "bad module token")
+			problem(w, http.StatusUnauthorized, "unauthenticated", "bad module token")
 			return
 		}
 		for _, s := range scopes {
 			if !c.Scopes[s] {
-				problem(w, 403, "scope_denied", "the module was not granted "+s)
+				problem(w, http.StatusForbidden, "scope_denied", "the module was not granted "+s)
 				return
 			}
 		}
@@ -390,24 +391,24 @@ func (c *Core) op(scopes []string, modes string, f opFunc) http.HandlerFunc {
 			t, ok := c.tokens[r.Header.Get("X-Togavsu-Context-Token")]
 			u := c.Users[t.userID]
 			if !ok || u == nil || !u.Active {
-				problem(w, 401, "unauthenticated", "bad context token")
+				problem(w, http.StatusUnauthorized, "unauthenticated", "bad context token")
 				return
 			}
 			if !strings.Contains(modes, "viewer") {
-				problem(w, 403, "scope_denied", "no viewer form")
+				problem(w, http.StatusForbidden, "scope_denied", "no viewer form")
 				return
 			}
 			a = actor{user: u, matter: t.matterID, label: u.ID}
 		case r.Header.Get("X-Togavsu-Task-Authorization") != "":
 			g, ok := c.grants[r.Header.Get("X-Togavsu-Task-Authorization")]
 			if !ok || !strings.Contains(modes, "task") {
-				problem(w, 403, "forbidden", "bad task authorization")
+				problem(w, http.StatusForbidden, "forbidden", "bad task authorization")
 				return
 			}
 			a = actor{grant: g, label: "module:" + Module}
 		default:
 			if !strings.Contains(modes, "service") {
-				problem(w, 403, "scope_denied", "no service principal form")
+				problem(w, http.StatusForbidden, "scope_denied", "no service principal form")
 				return
 			}
 			a = actor{service: true, label: "module:" + Module}
@@ -425,7 +426,7 @@ func (c *Core) op(scopes []string, modes string, f opFunc) http.HandlerFunc {
 		ik := a.label + " " + r.Method + " " + r.URL.Path + " " + key
 		if s, ok := c.idem[ik]; ok {
 			if s.bodySum != sum(raw) {
-				problem(w, 409, "idempotency_conflict", "this Idempotency-Key was used with a different body")
+				problem(w, http.StatusConflict, "idempotency_conflict", "this Idempotency-Key was used with a different body")
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -436,7 +437,7 @@ func (c *Core) op(scopes []string, modes string, f opFunc) http.HandlerFunc {
 		}
 		rec := httptest.NewRecorder()
 		f(rec, r, a)
-		if rec.Code < 500 {
+		if rec.Code < http.StatusInternalServerError {
 			c.idem[ik] = saved{rec.Code, rec.Body.Bytes(), sum(raw)}
 		}
 		for k, v := range rec.Header() {
@@ -508,16 +509,17 @@ func (c *Core) verify(w http.ResponseWriter, _ *http.Request, a actor) {
 	if a.matter != "" {
 		matter = a.matter
 	}
-	writeJSON(w, 200, map[string]any{"viewer_user_id": a.user.ID, "roles": a.user.Roles, "module": Module, "matter_id": matter})
+	writeJSON(w, http.StatusOK, map[string]any{"viewer_user_id": a.user.ID, "roles": a.user.Roles, "module": Module, "matter_id": matter})
 }
-
-var defaults = map[string]string{"microsoft_tenant": "organizations", "poll_minutes": "5", "backfill_days": "30",
-	"case_number_patterns": `\b(\d{2}[A-Z]{2,4}-[A-Z]{2,3}\d{4,8}(?:-\d{1,3})?)\b;\b((?:SC|ED|WD|SD)\d{4,6})\b`,
-	"court_ai_pick":        "true", "summary_interval_minutes": "60", "sending_disabled": "false"}
 
 func (c *Core) settings(w http.ResponseWriter, _ *http.Request, _ actor) {
 	keys := []string{"google_client_id", "google_client_secret", "microsoft_client_id", "microsoft_client_secret", "microsoft_tenant", "firm_domains",
 		"poll_minutes", "backfill_days", "case_number_patterns", "court_ai_pick", "summary_recipients", "summary_interval_minutes", "sending_disabled"}
+	defaults, err := pkgfiles.Defaults()
+	if err != nil {
+		problem(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
 	var out []map[string]any
 	for _, k := range keys {
 		v, ok := c.Settings[k]
@@ -526,7 +528,7 @@ func (c *Core) settings(w http.ResponseWriter, _ *http.Request, _ actor) {
 		}
 		out = append(out, map[string]any{"key": k, "value": v})
 	}
-	writeJSON(w, 200, out)
+	writeJSON(w, http.StatusOK, out)
 }
 
 var secretName = regexp.MustCompile(`^[a-z0-9/_-]{1,128}$`)
@@ -537,33 +539,33 @@ func (c *Core) putSecret(w http.ResponseWriter, r *http.Request, _ actor) {
 		Value string `json:"value"`
 	}
 	if !secretName.MatchString(name) || json.NewDecoder(r.Body).Decode(&body) != nil || len(body.Value) > 16<<10 {
-		problem(w, 400, "validation_failed", "bad secret")
+		problem(w, http.StatusBadRequest, "validation_failed", "bad secret")
 		return
 	}
-	if _, ok := c.Secrets[name]; !ok && len(c.Secrets) >= 512 {
-		problem(w, 400, "validation_failed", "too many secrets")
+	if _, ok := c.Secrets[name]; !ok && len(c.Secrets) >= maxSecrets {
+		problem(w, http.StatusBadRequest, "validation_failed", "too many secrets")
 		return
 	}
 	c.Secrets[name] = body.Value
-	w.WriteHeader(204)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (c *Core) getSecret(w http.ResponseWriter, r *http.Request, _ actor) {
 	v, ok := c.Secrets[r.PathValue("name")]
 	if !ok {
-		problem(w, 404, "not_found", "secret")
+		problem(w, http.StatusNotFound, "not_found", "secret")
 		return
 	}
-	writeJSON(w, 200, map[string]string{"name": r.PathValue("name"), "value": v})
+	writeJSON(w, http.StatusOK, map[string]string{"name": r.PathValue("name"), "value": v})
 }
 
 func (c *Core) deleteSecret(w http.ResponseWriter, r *http.Request, _ actor) {
 	if _, ok := c.Secrets[r.PathValue("name")]; !ok {
-		problem(w, 404, "not_found", "secret")
+		problem(w, http.StatusNotFound, "not_found", "secret")
 		return
 	}
 	delete(c.Secrets, r.PathValue("name"))
-	w.WriteHeader(204)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func lowerSet(in []string) map[string]bool {
@@ -580,12 +582,12 @@ func inName(name, cn string) bool {
 	n, k := strings.ToUpper(name), strings.ToUpper(cn)
 	for i := 0; ; {
 		j := strings.Index(n[i:], k)
-		if j < 0 {
+		if j < zero {
 			return false
 		}
 		s := i + j
 		e := s + len(k)
-		before := s == 0 || !alnum(n[s-1])
+		before := s == zero || !alnum(n[s-1])
 		after := e == len(n) || (!alnum(n[e]) && n[e] != '-')
 		if before && after {
 			return true
@@ -616,12 +618,12 @@ func (c *Core) matchMail(w http.ResponseWriter, r *http.Request, a actor) {
 		KnownMatterIDs []string `json:"known_matter_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		problem(w, 400, "validation_failed", err.Error())
+		problem(w, http.StatusBadRequest, "validation_failed", err.Error())
 		return
 	}
 	for _, l := range [][]string{req.Addresses, req.MatterNumbers, req.CaseNumbers, req.NameTokens, req.KnownMatterIDs} {
-		if len(l) > 50 {
-			problem(w, 400, "validation_failed", "at most 50 entries")
+		if len(l) > maxMatchEntries {
+			problem(w, http.StatusBadRequest, "validation_failed", "at most 50 entries")
 			return
 		}
 	}
@@ -683,7 +685,7 @@ func (c *Core) matchMail(w http.ResponseWriter, r *http.Request, a actor) {
 		if known[strings.ToLower(m.ID)] {
 			via = append(via, "known")
 		}
-		if len(via) > 0 && len(hits) < 50 {
+		if len(via) > 0 && len(hits) < maxMatchEntries {
 			hits = append(hits, hit{m, via})
 		}
 	}
@@ -704,10 +706,10 @@ func (c *Core) matchMail(w http.ResponseWriter, r *http.Request, a actor) {
 		c.grants[tok] = &grant{matterIDs: matterIDs, match: true}
 		out["match_token"] = tok
 	}
-	writeJSON(w, 200, out)
+	writeJSON(w, http.StatusOK, out)
 }
 
-func ids2() string { return ids.Secret(12) }
+func ids2() string { return ids.Secret(tokenBytes) }
 
 func (c *Core) filingGrant(w http.ResponseWriter, r *http.Request, _ actor) {
 	var req struct {
@@ -716,26 +718,26 @@ func (c *Core) filingGrant(w http.ResponseWriter, r *http.Request, _ actor) {
 		MessageKey string `json:"message_key"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.MessageKey == "" {
-		problem(w, 400, "validation_failed", "match_token, matter_id and message_key")
+		problem(w, http.StatusBadRequest, "validation_failed", "match_token, matter_id and message_key")
 		return
 	}
 	mt, ok := c.grants[req.MatchToken]
 	if !ok || !mt.match {
-		problem(w, 403, "forbidden", "bad match token")
+		problem(w, http.StatusForbidden, "forbidden", "bad match token")
 		return
 	}
 	m := c.Matters[req.MatterID]
 	if m == nil || m.Wall != nil {
-		problem(w, 404, "not_found", "matter")
+		problem(w, http.StatusNotFound, "not_found", "matter")
 		return
 	}
 	if !mt.matterIDs[req.MatterID] {
-		problem(w, 403, "forbidden", "the matter is not in the match token")
+		problem(w, http.StatusForbidden, "forbidden", "the matter is not in the match token")
 		return
 	}
 	tok := "grant-" + ids2()
 	c.grants[tok] = &grant{matterID: req.MatterID, messageKey: req.MessageKey}
-	writeJSON(w, 201, map[string]any{"authorization": tok, "expires_at": time.Now().Add(15 * time.Minute).UTC().Format(time.RFC3339)})
+	writeJSON(w, http.StatusCreated, map[string]any{"authorization": tok, "expires_at": time.Now().Add(filingGrantTTL).UTC().Format(time.RFC3339)})
 }
 
 func (c *Core) matterJSON(m *Matter) map[string]any {
@@ -766,13 +768,13 @@ func (c *Core) listMatters(w http.ResponseWriter, r *http.Request, a actor) {
 	if out == nil {
 		out = []map[string]any{}
 	}
-	writeJSON(w, 200, map[string]any{"data": out, "page": map[string]any{"limit": 50, "next_cursor": nil}})
+	writeJSON(w, http.StatusOK, map[string]any{"data": out, "page": map[string]any{"limit": pageLimit, "next_cursor": nil}})
 }
 
 func (c *Core) getMatter(w http.ResponseWriter, r *http.Request, a actor) {
 	m := c.Matters[r.PathValue("id")]
 	if !c.canRead(a, m) {
-		problem(w, 404, "not_found", "matter")
+		problem(w, http.StatusNotFound, "not_found", "matter")
 		return
 	}
 	out := c.matterJSON(m)
@@ -780,7 +782,7 @@ func (c *Core) getMatter(w http.ResponseWriter, r *http.Request, a actor) {
 		if inc == "email.mail" && c.IncludeRead != nil {
 			row, err := c.IncludeRead(r.Context(), m.ID)
 			if err != nil {
-				problem(w, 500, "internal", err.Error())
+				problem(w, http.StatusInternalServerError, "internal", err.Error())
 				return
 			}
 			rows := []map[string]any{}
@@ -790,13 +792,13 @@ func (c *Core) getMatter(w http.ResponseWriter, r *http.Request, a actor) {
 			out["included"] = map[string]any{"email.mail": rows}
 		}
 	}
-	writeJSON(w, 200, out)
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (c *Core) listParties(w http.ResponseWriter, r *http.Request, a actor) {
 	m := c.Matters[r.URL.Query().Get("matter_id")]
 	if !c.canRead(a, m) {
-		problem(w, 404, "not_found", "matter")
+		problem(w, http.StatusNotFound, "not_found", "matter")
 		return
 	}
 	var out []map[string]any
@@ -805,7 +807,7 @@ func (c *Core) listParties(w http.ResponseWriter, r *http.Request, a actor) {
 			out = append(out, map[string]any{"id": p.ID, "matter_id": p.MatterID, "contact_id": p.ContactID, "role": p.Role, "primary": p.Primary})
 		}
 	}
-	writeJSON(w, 200, map[string]any{"data": out, "page": map[string]any{"limit": 50, "next_cursor": nil}})
+	writeJSON(w, http.StatusOK, map[string]any{"data": out, "page": map[string]any{"limit": pageLimit, "next_cursor": nil}})
 }
 
 func (c *Core) staff(a actor) bool { return a.user != nil && a.user.has("admin", "attorney", "staff") }
@@ -816,7 +818,7 @@ func contactJSON(ct *Contact) map[string]any {
 
 func (c *Core) listContacts(w http.ResponseWriter, r *http.Request, a actor) {
 	if !c.staff(a) {
-		problem(w, 404, "not_found", "contacts")
+		problem(w, http.StatusNotFound, "not_found", "contacts")
 		return
 	}
 	q := strings.ToLower(r.URL.Query().Get("q"))
@@ -826,29 +828,29 @@ func (c *Core) listContacts(w http.ResponseWriter, r *http.Request, a actor) {
 			out = append(out, contactJSON(ct))
 		}
 	}
-	writeJSON(w, 200, map[string]any{"data": out, "page": map[string]any{"limit": 20, "next_cursor": nil}})
+	writeJSON(w, http.StatusOK, map[string]any{"data": out, "page": map[string]any{"limit": contactPageLimit, "next_cursor": nil}})
 }
 
 func (c *Core) getContact(w http.ResponseWriter, r *http.Request, a actor) {
 	ct := c.Contacts[r.PathValue("id")]
 	if ct == nil || !c.staff(a) {
-		problem(w, 404, "not_found", "contact")
+		problem(w, http.StatusNotFound, "not_found", "contact")
 		return
 	}
-	writeJSON(w, 200, contactJSON(ct))
+	writeJSON(w, http.StatusOK, contactJSON(ct))
 }
 
 func (c *Core) contactEmails(w http.ResponseWriter, r *http.Request, a actor) {
 	ct := c.Contacts[r.URL.Query().Get("contact_id")]
 	if ct == nil || !c.staff(a) {
-		problem(w, 404, "not_found", "contact")
+		problem(w, http.StatusNotFound, "not_found", "contact")
 		return
 	}
 	var out []map[string]any
 	for i, e := range ct.Emails {
-		out = append(out, map[string]any{"contact_id": ct.ID, "email": e, "primary": i == 0, "effective_to": nil})
+		out = append(out, map[string]any{"contact_id": ct.ID, "email": e, "primary": i == zero, "effective_to": nil})
 	}
-	writeJSON(w, 200, map[string]any{"data": out, "page": map[string]any{"limit": 50, "next_cursor": nil}})
+	writeJSON(w, http.StatusOK, map[string]any{"data": out, "page": map[string]any{"limit": pageLimit, "next_cursor": nil}})
 }
 
 func (c *Core) writeMatter(a actor, matterID string) bool {
@@ -868,51 +870,51 @@ func (c *Core) createUpload(w http.ResponseWriter, r *http.Request, a actor) {
 		SHA256    string `json:"sha256"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.FileName == "" {
-		problem(w, 400, "validation_failed", "file_name and size_bytes")
+		problem(w, http.StatusBadRequest, "validation_failed", "file_name and size_bytes")
 		return
 	}
 	if !c.writeMatter(a, req.MatterID) {
-		problem(w, 404, "not_found", "matter")
+		problem(w, http.StatusNotFound, "not_found", "matter")
 		return
 	}
 	u := &upload{id: ids.Now(), name: req.FileName, matterID: req.MatterID, mediaType: req.MediaType, sha: req.SHA256, size: req.SizeBytes, owner: a.label, status: "receiving"}
 	c.uploads[u.id] = u
-	writeJSON(w, 201, c.uploadJSON(u))
+	writeJSON(w, http.StatusCreated, c.uploadJSON(u))
 }
 
 func (c *Core) uploadJSON(u *upload) map[string]any {
 	return map[string]any{"id": u.id, "owner": u.owner, "chunk_size_bytes": c.ChunkSize, "next_offset": len(u.data), "size_bytes": u.size,
-		"expires_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339), "status": u.status}
+		"expires_at": time.Now().Add(uploadTTL).UTC().Format(time.RFC3339), "status": u.status}
 }
 
 func (c *Core) putChunk(w http.ResponseWriter, r *http.Request, a actor) {
 	u := c.uploads[r.PathValue("id")]
 	if u == nil || u.owner != a.label {
-		problem(w, 404, "not_found", "upload")
+		problem(w, http.StatusNotFound, "not_found", "upload")
 		return
 	}
 	var start, end, total int64
 	if _, err := fmt.Sscanf(r.Header.Get("Content-Range"), "bytes %d-%d/%d", &start, &end, &total); err != nil || start != int64(len(u.data)) {
-		problem(w, 400, "validation_failed", "Content-Range must continue at "+strconv.Itoa(len(u.data)))
+		problem(w, http.StatusBadRequest, "validation_failed", "Content-Range must continue at "+strconv.Itoa(len(u.data)))
 		return
 	}
 	b, _ := io.ReadAll(r.Body)
 	u.data = append(u.data, b...)
-	writeJSON(w, 200, c.uploadJSON(u))
+	writeJSON(w, http.StatusOK, c.uploadJSON(u))
 }
 
 func (c *Core) completeUpload(w http.ResponseWriter, r *http.Request, a actor) {
 	u := c.uploads[r.PathValue("id")]
 	if u == nil || u.owner != a.label {
-		problem(w, 404, "not_found", "upload")
+		problem(w, http.StatusNotFound, "not_found", "upload")
 		return
 	}
 	if int64(len(u.data)) != u.size || (u.sha != "" && u.sha != sum(u.data)) {
-		problem(w, 400, "validation_failed", "size or sha256 doesn't match")
+		problem(w, http.StatusBadRequest, "validation_failed", "size or sha256 doesn't match")
 		return
 	}
 	u.status = "staged"
-	writeJSON(w, 200, c.uploadJSON(u))
+	writeJSON(w, http.StatusOK, c.uploadJSON(u))
 }
 
 func (c *Core) fileJSON(f *File) map[string]any {
@@ -925,11 +927,11 @@ func (c *Core) fileJSON(f *File) map[string]any {
 }
 
 func (c *Core) publish(w http.ResponseWriter, r *http.Request, a actor) {
-	if c.FailPublishAt > 0 {
+	if c.FailPublishAt > zero {
 		c.publishes++
 		if c.publishes == c.FailPublishAt {
-			c.FailPublishAt = 0
-			problem(w, 500, "internal", "fake: publish interrupted")
+			c.FailPublishAt = zero
+			problem(w, http.StatusInternalServerError, "internal", "fake: publish interrupted")
 			return
 		}
 	}
@@ -941,30 +943,30 @@ func (c *Core) publish(w http.ResponseWriter, r *http.Request, a actor) {
 		Origin       string `json:"origin"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		problem(w, 400, "validation_failed", err.Error())
+		problem(w, http.StatusBadRequest, "validation_failed", err.Error())
 		return
 	}
 	u := c.uploads[req.UploadID]
 	if u == nil || u.owner != a.label || u.status != "staged" {
-		problem(w, 404, "not_found", "upload")
+		problem(w, http.StatusNotFound, "not_found", "upload")
 		return
 	}
 	if req.MatterID == "" {
 		req.MatterID = u.matterID
 	}
 	if !c.writeMatter(a, req.MatterID) {
-		problem(w, 404, "not_found", "matter")
+		problem(w, http.StatusNotFound, "not_found", "matter")
 		return
 	}
 	if req.Origin != "" && req.Origin != "firm" && req.Origin != "received" {
-		problem(w, 400, "validation_failed", "origin is firm or received")
+		problem(w, http.StatusBadRequest, "validation_failed", "origin is firm or received")
 		return
 	}
 	if req.Origin == "" {
 		req.Origin = "received"
 	}
 	if req.AttorneyOnly && a.user != nil && !a.user.has("admin", "attorney") {
-		problem(w, 403, "forbidden", "attorney-only needs an attorney")
+		problem(w, http.StatusForbidden, "forbidden", "attorney-only needs an attorney")
 		return
 	}
 	name := req.Name
@@ -977,7 +979,7 @@ func (c *Core) publish(w http.ResponseWriter, r *http.Request, a actor) {
 	u.status = "published"
 	c.Files[f.ID] = f
 	c.insert("files", f.ID)
-	writeJSON(w, 201, c.fileJSON(f))
+	writeJSON(w, http.StatusCreated, c.fileJSON(f))
 }
 
 func (c *Core) readFile(a actor, id string) *File {
@@ -1008,16 +1010,16 @@ func (c *Core) link(w http.ResponseWriter, r *http.Request, a actor) {
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	from, to := c.readFile(a, r.PathValue("id")), c.readFile(a, req.ToFileID)
 	if from == nil || to == nil {
-		problem(w, 404, "not_found", "file")
+		problem(w, http.StatusNotFound, "not_found", "file")
 		return
 	}
 	if req.Relationship != "attachment" {
-		problem(w, 400, "validation_failed", "relationship")
+		problem(w, http.StatusBadRequest, "validation_failed", "relationship")
 		return
 	}
 	l := Link{From: from.ID, To: to.ID, Relationship: req.Relationship, CreatedBy: a.label}
 	c.Links = append(c.Links, l)
-	writeJSON(w, 201, map[string]any{"id": ids.Now(), "from_file_id": l.From, "to_file_id": l.To, "relationship": l.Relationship})
+	writeJSON(w, http.StatusCreated, map[string]any{"id": ids.Now(), "from_file_id": l.From, "to_file_id": l.To, "relationship": l.Relationship})
 }
 
 func (c *Core) listFiles(w http.ResponseWriter, r *http.Request, a actor) {
@@ -1027,35 +1029,35 @@ func (c *Core) listFiles(w http.ResponseWriter, r *http.Request, a actor) {
 			out = append(out, c.fileJSON(f))
 		}
 	}
-	writeJSON(w, 200, map[string]any{"data": out, "page": map[string]any{"limit": 100, "next_cursor": nil}})
+	writeJSON(w, http.StatusOK, map[string]any{"data": out, "page": map[string]any{"limit": filePageLimit, "next_cursor": nil}})
 }
 
 func (c *Core) getFile(w http.ResponseWriter, r *http.Request, a actor) {
 	f := c.readFile(a, r.PathValue("id"))
 	if f == nil {
-		problem(w, 404, "not_found", "file")
+		problem(w, http.StatusNotFound, "not_found", "file")
 		return
 	}
-	writeJSON(w, 200, c.fileJSON(f))
+	writeJSON(w, http.StatusOK, c.fileJSON(f))
 }
 
 func (c *Core) versions(w http.ResponseWriter, r *http.Request, a actor) {
 	f := c.readFile(a, r.PathValue("id"))
 	if f == nil {
-		problem(w, 404, "not_found", "file")
+		problem(w, http.StatusNotFound, "not_found", "file")
 		return
 	}
 	var out []map[string]any
 	for _, v := range f.Versions {
 		out = append(out, map[string]any{"id": v.ID, "file_id": f.ID, "size_bytes": len(v.Data), "sha256": v.SHA256, "media_type": v.MediaType})
 	}
-	writeJSON(w, 200, map[string]any{"data": out, "page": map[string]any{"limit": 50, "next_cursor": nil}})
+	writeJSON(w, http.StatusOK, map[string]any{"data": out, "page": map[string]any{"limit": pageLimit, "next_cursor": nil}})
 }
 
 func (c *Core) download(w http.ResponseWriter, r *http.Request, a actor) {
 	f := c.readFile(a, r.PathValue("id"))
 	if f == nil {
-		problem(w, 404, "not_found", "file")
+		problem(w, http.StatusNotFound, "not_found", "file")
 		return
 	}
 	for _, v := range f.Versions {
@@ -1065,7 +1067,7 @@ func (c *Core) download(w http.ResponseWriter, r *http.Request, a actor) {
 			return
 		}
 	}
-	problem(w, 404, "not_found", "version")
+	problem(w, http.StatusNotFound, "not_found", "version")
 }
 
 func (c *Core) createNote(w http.ResponseWriter, r *http.Request, a actor) {
@@ -1076,22 +1078,22 @@ func (c *Core) createNote(w http.ResponseWriter, r *http.Request, a actor) {
 		Tags     []string `json:"tags"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Title == "" || req.Body == "" {
-		problem(w, 400, "validation_failed", "title and body")
+		problem(w, http.StatusBadRequest, "validation_failed", "title and body")
 		return
 	}
 	if !c.writeMatter(a, req.MatterID) {
-		problem(w, 404, "not_found", "matter")
+		problem(w, http.StatusNotFound, "not_found", "matter")
 		return
 	}
-	if c.FailNotes > 0 {
+	if c.FailNotes > zero {
 		c.FailNotes--
-		problem(w, 500, "internal", "fake: note write failed")
+		problem(w, http.StatusInternalServerError, "internal", "fake: note write failed")
 		return
 	}
 	n := &Note{ID: ids.Now(), MatterID: req.MatterID, Title: req.Title, Body: req.Body, Tags: req.Tags, CreatedBy: a.label}
 	c.Notes[n.ID] = n
 	c.insert("notes", n.ID)
-	writeJSON(w, 201, map[string]any{"id": n.ID, "matter_id": n.MatterID, "title": n.Title})
+	writeJSON(w, http.StatusCreated, map[string]any{"id": n.ID, "matter_id": n.MatterID, "title": n.Title})
 }
 
 // notificationDefaults are the manifest kinds' default channels (CORE-03).
@@ -1105,17 +1107,17 @@ func (c *Core) notify(w http.ResponseWriter, r *http.Request, _ actor) {
 		Link   string `json:"link"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		problem(w, 400, "validation_failed", err.Error())
+		problem(w, http.StatusBadRequest, "validation_failed", err.Error())
 		return
 	}
 	emailed, ok := notificationDefaults[req.Kind]
 	u := c.Users[req.UserID]
 	if !ok || u == nil || !u.Active || req.Title == "" || !strings.HasPrefix(req.Link, "/modules/"+Module+"/") {
-		problem(w, 400, "validation_failed", "kind, user, title or link")
+		problem(w, http.StatusBadRequest, "validation_failed", "kind, user, title or link")
 		return
 	}
 	c.Notices = append(c.Notices, Notification{UserID: req.UserID, Kind: Module + "." + req.Kind, Title: req.Title, Link: req.Link, Emailed: emailed})
-	writeJSON(w, 201, map[string]any{"created": 1, "notification_ids": []string{ids.Now()}})
+	writeJSON(w, http.StatusCreated, map[string]any{"created": one, "notification_ids": []string{ids.Now()}})
 }
 
 func (c *Core) aiCall(w http.ResponseWriter, r *http.Request, a actor) {
@@ -1124,11 +1126,11 @@ func (c *Core) aiCall(w http.ResponseWriter, r *http.Request, a actor) {
 		Input map[string]any `json:"input"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Task != "court_notice_pick" {
-		problem(w, 400, "validation_failed", "task")
+		problem(w, http.StatusBadRequest, "validation_failed", "task")
 		return
 	}
 	if a.grant != nil && !a.grant.match {
-		problem(w, 403, "forbidden", "only a match token runs mail_matching")
+		problem(w, http.StatusForbidden, "forbidden", "only a match token runs mail_matching")
 		return
 	}
 	c.AICalls++
@@ -1136,7 +1138,7 @@ func (c *Core) aiCall(w http.ResponseWriter, r *http.Request, a actor) {
 	if c.AI != nil {
 		out = c.AI(req.Input)
 	}
-	writeJSON(w, 201, map[string]any{"id": ids.Now(), "task": req.Task, "provider": "fake", "model": "fake", "output": out})
+	writeJSON(w, http.StatusCreated, map[string]any{"id": ids.Now(), "task": req.Task, "provider": "fake", "model": "fake", "output": out})
 }
 
 func (c *Core) exchangeDevice(w http.ResponseWriter, r *http.Request, _ actor) {
@@ -1147,16 +1149,16 @@ func (c *Core) exchangeDevice(w http.ResponseWriter, r *http.Request, _ actor) {
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	d, ok := c.devices[req.DeviceSecret]
 	if !ok || d.revoked || c.Users[d.userID] == nil || !c.Users[d.userID].Active {
-		problem(w, 401, "unauthenticated", "the device grant is revoked or unknown")
+		problem(w, http.StatusUnauthorized, "unauthenticated", "the device grant is revoked or unknown")
 		return
 	}
 	u := c.Users[d.userID]
 	if req.MatterID != "" && !c.canRead(actor{user: u}, c.Matters[req.MatterID]) {
-		problem(w, 404, "not_found", "matter")
+		problem(w, http.StatusNotFound, "not_found", "matter")
 		return
 	}
-	t := "ctx-" + ids.Secret(12)
+	t := "ctx-" + ids.Secret(tokenBytes)
 	c.tokens[t] = ctxToken{userID: u.ID, matterID: req.MatterID}
-	writeJSON(w, 201, map[string]any{"token": t, "expires_at": time.Now().Add(10 * time.Minute).UTC().Format(time.RFC3339),
+	writeJSON(w, http.StatusCreated, map[string]any{"token": t, "expires_at": time.Now().Add(deviceTokenTTL).UTC().Format(time.RFC3339),
 		"viewer_user_id": u.ID, "roles": u.Roles, "matter_id": nil, "allowed_operations": []string{}})
 }

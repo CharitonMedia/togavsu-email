@@ -195,14 +195,14 @@ func (a *Adapter) Folders(ctx context.Context) ([]provider.Folder, error) {
 }
 
 func refID(validity uint32, uid imap.UID) string {
-	return strconv.FormatUint(uint64(validity), 10) + "." + strconv.FormatUint(uint64(uid), 10)
+	return strconv.FormatUint(uint64(validity), decimal) + "." + strconv.FormatUint(uint64(uid), decimal)
 }
 
 func parseID(id string) (uint32, imap.UID, bool) {
 	v, u, ok := strings.Cut(id, ".")
 	vv, err1 := strconv.ParseUint(v, 10, 32)
 	uu, err2 := strconv.ParseUint(u, 10, 32)
-	return uint32(vv), imap.UID(uu), ok && err1 == nil && err2 == nil && uu > 0
+	return uint32(vv), imap.UID(uu), ok && err1 == nil && err2 == nil && uu > zero
 }
 
 // Changes implements provider.Provider: UID SEARCH above the cursor's last UID; a
@@ -217,13 +217,13 @@ func (a *Adapter) Changes(ctx context.Context, f provider.Folder, cur provider.C
 		}
 		last := imap.UID(cur.LastUID)
 		if sel.UIDValidity != cur.UIDValidity {
-			last = 0
+			last = zero
 		}
 		next = provider.Cursor{UIDValidity: sel.UIDValidity, LastUID: uint32(last)}
-		if sel.NumMessages == 0 {
+		if sel.NumMessages == zero {
 			return nil
 		}
-		crit := &imap.SearchCriteria{UID: []imap.UIDSet{{imap.UIDRange{Start: last + 1, Stop: 0}}}}
+		crit := &imap.SearchCriteria{UID: []imap.UIDSet{{imap.UIDRange{Start: last + one, Stop: zero}}}}
 		if !since.IsZero() {
 			crit.Since = since
 		}
@@ -239,7 +239,7 @@ func (a *Adapter) Changes(ctx context.Context, f provider.Folder, cur provider.C
 			}
 		}
 		sort.Slice(uids, func(i, j int) bool { return uids[i] < uids[j] })
-		if limit > 0 && len(uids) > limit {
+		if limit > zero && len(uids) > limit {
 			uids = uids[:limit]
 		}
 		for _, u := range uids {
@@ -391,9 +391,9 @@ func (a *Adapter) Move(ctx context.Context, r provider.Ref, folder string) (prov
 		if err != nil {
 			return err
 		}
-		if md != nil && md.UIDValidity != 0 {
+		if md != nil && md.UIDValidity != zero {
 			if dest, ok := md.DestUIDs.(imap.UIDSet); ok {
-				if nums, ok := dest.Nums(); ok && len(nums) == 1 {
+				if nums, ok := dest.Nums(); ok && len(nums) == one {
 					out = provider.Ref{Folder: folder, ID: refID(md.UIDValidity, nums[0])}
 					return nil
 				}

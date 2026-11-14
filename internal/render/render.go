@@ -93,7 +93,7 @@ func write(buf *bytes.Buffer, n *nethtml.Node) {
 	default:
 		return // comments, doctypes
 	}
-	if dropWhole[n.DataAtom] || n.DataAtom == 0 && (strings.Contains(n.Data, ":") || n.Data == "svg") {
+	if dropWhole[n.DataAtom] || n.DataAtom == zero && (strings.Contains(n.Data, ":") || n.Data == "svg") {
 		return
 	}
 	if !keep[n.DataAtom] {
@@ -196,12 +196,12 @@ var nonWord = regexp.MustCompile(`[^a-z0-9]+`)
 // FileName is the filed copy's name: email-<YYYY-MM-DD>-<subject words>.html.
 func FileName(date time.Time, subject string) string {
 	words := strings.Fields(nonWord.ReplaceAllString(strings.ToLower(subject), " "))
-	if len(words) > 8 {
-		words = words[:8]
+	if len(words) > fileNameWords {
+		words = words[:fileNameWords]
 	}
 	slug := strings.Join(words, "-")
-	if len(slug) > 60 {
-		slug = strings.Trim(slug[:60], "-")
+	if len(slug) > fileNameSlugMax {
+		slug = strings.Trim(slug[:fileNameSlugMax], "-")
 	}
 	if slug == "" {
 		slug = "no-subject"

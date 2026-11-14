@@ -64,35 +64,88 @@ internal/mailparse/        MIME parsing; internal/render/ the HTML sanitizer
 internal/oauth/            PKCE, token exchange and refresh
 internal/coreapi/          core API client
 internal/store/            mod_email reads and writes
-internal/packaging/        packaging and signing adapter (stub, see below)
+internal/packaging/        packaging and signing on the core's pkg/modulekit
+internal/bootstrap/        the only environment reads
+internal/kittest/          the installable package files and throwaway test keys
+coresuite/                 acceptance suite on the real core (pkg/modulekit/coretest)
 internal/fakecore/         in-memory core for tests
 internal/pgtest/           scratch Postgres schema for tests
 internal/testmail/         synthetic messages, a test SMTP listener and test certs
 outlook-addin/             the add-in manifest template and task pane
-package/                   togavsu-module.yaml and migrations 0001 to 0005
+package/                   togavsu-module.yaml, pending.yaml and migrations 0001 to 0005
 ```
 
 ## Build and test
 
 ```
+gofmt -l .
 go vet ./...
-TOGAVSU_TEST_DATABASE_URL='postgres://postgres:pg@127.0.0.1:5432/postgres?sslmode=disable' go test ./...
+TOGAVSU_TEST_DATABASE_URL='postgres://postgres:pg@127.0.0.1:5432/postgres?sslmode=disable' go test -race -timeout 0 ./...
 docker build -t togavsu-email .
 ```
 
-The Postgres tests create and use only the `togavsu_email` database, one scratch
-`mod_email_<random>` schema per test; without `TOGAVSU_TEST_DATABASE_URL` they skip.
-No test reaches a real mail server or the network: the provider tests use the go-imap v2
-in-memory server, a local SMTP listener and `httptest` stand-ins of the Gmail and Graph
-APIs, all on 127.0.0.1, with certificates and tokens made at runtime; the acceptance
-tests at the repo root use the fake core and the fake mailbox set.
+The module requires the core (`github.com/CharitonMedia/togavsu`, pinned in go.mod) for
+`pkg/modulekit` and `pkg/modulekit/coretest`; no replace directive or go.work is used.
+
+The source passes the core's settings source check (`modulekit.CheckSource`, AC-030),
+test-support packages included, and `internal/packaging` holds it to that. Only
+`internal/bootstrap` reads the environment. Every fixed number (a spec rule, a protocol
+or format limit, a UUID offset, a strconv base) is a named constant in its package's
+`fixed.go`, spelled from `zero` and `one` as the core's matter-clock example does, and
+HTTP codes are `http.Status*`. What a firm adjusts is a setting in the manifest, read
+from the core with no default of the module's own.
+
+The unit Postgres tests use one scratch `mod_email_<random>` schema per test in the
+`togavsu_email` database. `coresuite/` composes the real core with coretest: it installs
+the signed package (trusted key, install, approval on the Modules tab), serves the module
+in process with the token, webhook secret and database login the core handed over, and
+drives each acceptance criterion the pinned core supports. coretest makes and drops its
+own databases and roles. A criterion that needs a core item the pinned core lacks is
+written out and skipped with `needs CORE-NN`. Without `TOGAVSU_TEST_DATABASE_URL` the
+database tests skip.
+
+No test reaches a real mail server or the network: mail comes from the fake mailbox set,
+the go-imap v2 in-memory server, a local SMTP listener and `httptest` stand-ins of the
+Gmail and Graph APIs, all on 127.0.0.1, with keys, certificates and tokens made at
+runtime. The acceptance tests at the repo root still run on the fake core.
 
 ## Packaging and signing
 
-`email package` and `email.Build` go through `packaging.Default`, which waits on a
-public packaging and signing package or CLI from the core. The module doesn't copy the
-core's internal marketplace code, which would drift from what the core verifies; until
-the core publishes one, the package command says so and writes nothing.
+```sh
+email package -key <seed file> -out email.signed.json
+```
+
+The key file holds a base64 Ed25519 seed; the command prints the public key the admin
+adds as a trusted signing key. The image digest in the manifest stays a placeholder.
+
+`package/` keeps the whole package as the spec defines it, including the parts the
+spec's core changes add. `package/pending.yaml` lists each of those parts with the CORE
+item it waits on and one line on what it does:
+
+| Part | CORE item |
+| --- | --- |
+| `container.system_mail`, scope `mail:system` | CORE-05 |
+| scope `module_secrets:write` | CORE-06 |
+| `notifications` | CORE-03 |
+| `sidebar[*].section`, `icon`, `order`, `badge` | CORE-08 |
+| `device_connect` | CORE-28 |
+
+The package command builds with the kit's `modulekit.BuildInstallable`: it holds back the
+pending parts the pinned core refuses, runs the core's install checks on the rest, signs
+it, and prints one line per held-back part with its CORE item (and one per pending entry
+that held nothing back). A part the core accepts is never held back, so each returns on
+its own when its CORE item lands, with no edit here. The command refuses to sign while the
+core refuses anything `pending.yaml` doesn't cover; `pending.yaml` itself never ships. No
+migration is held back: every statement installs on the pinned core.
+
+`internal/packaging` builds and signs the package with a key made at runtime on every
+test run, verifies the signature, and runs `modulekit.Check` on the signed files. It fails
+when Build errors, when the core refuses a part `pending.yaml` misses, and when a pending
+entry holds nothing back (take that entry out). CI also runs
+`go run github.com/CharitonMedia/togavsu/cmd/togavsu-module check -installable package`.
+Don't sign a release with `togavsu-module package -dir package`: that command reads every
+file in the directory and would ship `package/files.go`, the Go file that embeds it. Use
+`email package`, which packs the embedded files.
 
 ## License
 
