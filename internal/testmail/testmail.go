@@ -97,7 +97,9 @@ func (m Msg) Raw() []byte {
 }
 
 // PDF returns small synthetic bytes named n.
-func PDF(n int) []byte { return []byte(fmt.Sprintf("%%PDF-1.4\n%% synthetic test document %d\n%%%%EOF\n", n)) }
+func PDF(n int) []byte {
+	return []byte(fmt.Sprintf("%%PDF-1.4\n%% synthetic test document %d\n%%%%EOF\n", n))
+}
 
 // PNG is a tiny synthetic image body.
 var PNG = []byte("\x89PNG\r\n\x1a\nsynthetic")
