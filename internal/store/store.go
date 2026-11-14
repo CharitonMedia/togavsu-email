@@ -107,6 +107,9 @@ func (s *Store) InsertAccount(ctx context.Context, a *Account) error {
 	if a.Status == "" {
 		a.Status = "connected"
 	}
+	if a.SecretRef == "" {
+		a.SecretRef = "account/" + a.ID
+	}
 	_, err := s.DB.ExecContext(ctx, `INSERT INTO accounts (id, provider, role, address, label, owner_user_id, created_by, imap_host, imap_port,
 imap_security, smtp_host, smtp_port, smtp_security, login, secret_ref, can_send, default_send, system_mail, plus_addressing, after_file,
 status, sync_from, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
@@ -163,6 +166,27 @@ FROM (SELECT status FROM accounts WHERE id = $1 FOR UPDATE) old WHERE a.id = $1 
 		return "", ErrNotFound
 	}
 	return prev, err
+}
+
+// Mark makes id the one default_send account, or with system set the one system_mail
+// account.
+func (s *Store) Mark(ctx context.Context, id string, system bool) error {
+	col := "default_send"
+	if system {
+		col = "system_mail"
+	}
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `UPDATE accounts SET `+col+` = false WHERE `+col); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE accounts SET `+col+` = true, updated_at = $2 WHERE id = $1`, id, s.ms()); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // MarkSynced stamps a finished sync.
@@ -457,6 +481,11 @@ func (s *Store) SameMessage(ctx context.Context, accountID, rfcID, sha string) (
 func (s *Store) MoveRef(ctx context.Context, id, folderID, ref string) error {
 	_, err := s.DB.ExecContext(ctx, `UPDATE messages SET provider_ref = $2, folder_id = $3, updated_at = $4 WHERE id = $1`, id, ref, nullStr(folderID), s.ms())
 	return err
+}
+
+// ByRef reads the row an account holds for a provider ref.
+func (s *Store) ByRef(ctx context.Context, accountID, ref string) (Message, error) {
+	return scanMessage(s.DB.QueryRowContext(ctx, `SELECT `+messageCols+messageFrom+` WHERE m.account_id = $1 AND m.provider_ref = $2`, accountID, ref))
 }
 
 // Message reads one message.

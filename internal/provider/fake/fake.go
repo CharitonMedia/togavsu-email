@@ -328,7 +328,7 @@ func (m *Mailbox) AfterFile(ctx context.Context, r provider.Ref, a provider.Afte
 	return nil
 }
 
-func (m *Mailbox) moveLocked(f *folder, uid uint32, r provider.Ref, target string) {
+func (m *Mailbox) moveLocked(f *folder, uid uint32, r provider.Ref, target string) provider.Ref {
 	t := m.addFolderLocked(target)
 	mm := f.msgs[uid]
 	delete(f.msgs, uid)
@@ -337,21 +337,21 @@ func (m *Mailbox) moveLocked(f *folder, uid uint32, r provider.Ref, target strin
 	t.nextUID++
 	m.Moved = append(m.Moved, r.String()+"->"+target)
 	m.Events = append(m.Events, "move "+r.String()+" "+target)
+	return ref(t, mm.uid)
 }
 
 // Move implements provider.Provider; the target folder is created when missing.
-func (m *Mailbox) Move(_ context.Context, r provider.Ref, target string) error {
+func (m *Mailbox) Move(_ context.Context, r provider.Ref, target string) (provider.Ref, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.gate(); err != nil {
-		return err
+		return provider.Ref{}, err
 	}
 	f, uid, ok := m.find(r)
 	if !ok {
-		return provider.ErrNotFound
+		return provider.Ref{}, provider.ErrNotFound
 	}
-	m.moveLocked(f, uid, r, target)
-	return nil
+	return m.moveLocked(f, uid, r, target), nil
 }
 
 // MarkRead implements provider.Provider.

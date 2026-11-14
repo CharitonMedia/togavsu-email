@@ -13,19 +13,35 @@ import (
 // ErrUnavailable says packing and signing wait on the core's public tooling.
 var ErrUnavailable = errors.New("packaging: waits on a public signing and packaging package or CLI from the core")
 
-// Signer packs the package files (manifest and migrations by package path) and returns
-// the marketplace's signed package file.
-type Signer interface {
-	SignedPackage(priv ed25519.PrivateKey, files map[string][]byte) ([]byte, error)
+// Packager packs the package files (manifest and migrations by package path) and signs
+// them as the marketplace's signed package file.
+type Packager interface {
+	// Archive packs the files as the unsigned package.
+	Archive(files map[string][]byte) ([]byte, error)
+	// SignedPackage packs and signs with the Ed25519 key from seed.
+	SignedPackage(seed []byte, files map[string][]byte) ([]byte, error)
+	// PublicKeyPEM is the public key for seed, for the admin's trusted keys.
+	PublicKeyPEM(seed []byte) (string, error)
 }
 
-// Unavailable is the stub Signer.
+// Unavailable is the stub Packager.
 type Unavailable struct{}
 
-// SignedPackage implements Signer.
-func (Unavailable) SignedPackage(ed25519.PrivateKey, map[string][]byte) ([]byte, error) {
+// Archive implements Packager.
+func (Unavailable) Archive(map[string][]byte) ([]byte, error) { return nil, ErrUnavailable }
+
+// SignedPackage implements Packager.
+func (Unavailable) SignedPackage([]byte, map[string][]byte) ([]byte, error) {
 	return nil, ErrUnavailable
 }
 
-// Default is the Signer the package command uses.
-var Default Signer = Unavailable{}
+// PublicKeyPEM implements Packager.
+func (Unavailable) PublicKeyPEM(seed []byte) (string, error) {
+	if len(seed) != ed25519.SeedSize {
+		return "", errors.New("packaging: the key is a 32-byte Ed25519 seed")
+	}
+	return "", ErrUnavailable
+}
+
+// Default is the Packager the package command and email.Build use.
+var Default Packager = Unavailable{}

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Togavsu Email</title>
+<style>body{font:14px/1.45 system-ui,sans-serif;margin:12px}button{font:inherit;padding:4px 10px}.muted{color:#6b7385}
+li{margin:4px 0}input{font:inherit;width:100%;padding:4px}.hidden{display:none}</style>
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<script src="taskpane.js"></script></head>
+<body>
+<section id="signin" class="hidden"><p>Sign in to Togavsu to file mail from Outlook.</p><button id="signinBtn">Sign in</button></section>
+<section id="read" class="hidden">
+  <h3>Suggested matter</h3><div id="suggest" class="muted">Looking...</div>
+  <h3>Find a matter</h3><input id="matterQ" placeholder="Client, matter name or number"><ul id="matters"></ul>
+  <h3>Find a contact</h3><input id="contactQ" placeholder="Contact name or address"><ul id="contacts"></ul>
+  <p id="status" class="muted"></p>
+</section>
+<section id="compose" class="hidden">
+  <h3>File sent copy to matter</h3><input id="composeQ" placeholder="Client, matter name or number"><ul id="composeMatters"></ul>
+  <p id="composeStatus" class="muted"></p>
+</section>
+</body></html>

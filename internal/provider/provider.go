@@ -93,7 +93,8 @@ type Provider interface {
 	Changes(ctx context.Context, f Folder, cur Cursor, since time.Time, limit int) ([]Ref, Cursor, error)
 	Fetch(ctx context.Context, r Ref) ([]byte, error)
 	AfterFile(ctx context.Context, r Ref, a AfterFileAction) error
-	Move(ctx context.Context, r Ref, folder string) error
+	// Move puts the message in folder (created when missing) and returns its new ref.
+	Move(ctx context.Context, r Ref, folder string) (Ref, error)
 	MarkRead(ctx context.Context, r Ref, read bool) error
 	Send(ctx context.Context, raw []byte, env Envelope) (string, error)
 }

@@ -176,3 +176,51 @@ func (s *Source) Access(ctx context.Context, force bool) (string, error) {
 	}
 	return nt.AccessToken, nil
 }
+
+// API bases.
+const (
+	GmailAPI = "https://gmail.googleapis.com"
+	GraphAPI = "https://graph.microsoft.com"
+)
+
+// Profile asks the provider which mailbox an access token is for: Gmail's profile
+// emailAddress, or Graph's mail (userPrincipalName when mail is empty).
+func Profile(ctx context.Context, hc *http.Client, prov, apiBase, access string) (string, error) {
+	u := GmailAPI + "/gmail/v1/users/me/profile"
+	if prov == "microsoft" {
+		u = GraphAPI + "/v1.0/me?$select=mail,userPrincipalName"
+	}
+	if apiBase != "" {
+		u = strings.TrimRight(apiBase, "/") + strings.TrimPrefix(strings.TrimPrefix(u, GmailAPI), GraphAPI)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+access)
+	if hc == nil {
+		hc = http.DefaultClient
+	}
+	resp, err := hc.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("oauth: profile: %s", resp.Status)
+	}
+	var p struct {
+		EmailAddress      string `json:"emailAddress"`
+		Mail              string `json:"mail"`
+		UserPrincipalName string `json:"userPrincipalName"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&p); err != nil {
+		return "", err
+	}
+	for _, a := range []string{p.EmailAddress, p.Mail, p.UserPrincipalName} {
+		if strings.Contains(a, "@") {
+			return a, nil
+		}
+	}
+	return "", errors.New("oauth: the profile has no address")
+}

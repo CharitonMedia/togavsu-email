@@ -31,15 +31,16 @@ type Opener struct {
 	Core     *coreapi.Client
 	Factory  Factory
 	Settings func(ctx context.Context) (config.Settings, error)
-	// TokenURL and APIBase override the providers' endpoints (tests).
-	TokenURL, APIBase string
+	// TokenURL and APIBase (by provider) override the providers' endpoints (tests).
+	TokenURL string
+	APIBase  map[string]string
 }
 
 // Open returns the adapter for a.
 func (o *Opener) Open(ctx context.Context, a store.Account) (provider.Provider, error) {
 	c := provider.Config{AccountID: a.ID, Provider: a.Provider, Address: a.Address, IMAPHost: a.IMAPHost, IMAPPort: a.IMAPPort,
 		IMAPSecurity: a.IMAPSecurity, SMTPHost: a.SMTPHost, SMTPPort: a.SMTPPort, SMTPSecurity: a.SMTPSecurity, Login: a.Login,
-		TokenURL: o.TokenURL, APIBase: o.APIBase}
+		TokenURL: o.TokenURL, APIBase: o.APIBase[a.Provider]}
 	if a.SecretRef == "" {
 		return nil, errors.New("mailbox: the account has no stored credentials")
 	}

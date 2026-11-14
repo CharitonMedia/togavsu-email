@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Togavsu Email: device connected</title>
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script></head>
+<body><p id="msg">Connecting this device...</p>
+<script>
+// The core's device-connect page redirects here with #grant=<secret> after approval
+// (CORE-28). The grant goes to the taskpane with messageParent and is never shown.
+Office.onReady(function () {
+  var m = /[#&]grant=([^&]+)/.exec(window.location.hash || "");
+  history.replaceState(null, "", window.location.pathname);
+  if (!m) { document.getElementById("msg").textContent = "Togavsu did not connect this device. Close this window and try again."; return; }
+  Office.context.ui.messageParent(JSON.stringify({ grant: decodeURIComponent(m[1]) }));
+  document.getElementById("msg").textContent = "This device is connected. You can close this window.";
+});
+</script></body></html>
