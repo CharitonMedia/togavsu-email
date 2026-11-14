@@ -13,9 +13,12 @@ import (
 	"github.com/CharitonMedia/togavsu-email/internal/packaging"
 )
 
-// The package directory on disk and the embedded package are the same files, and the
-// core's install checks accept them.
-func TestPackageDirPassesTheCoreChecks(t *testing.T) {
+// The package directory on disk and the embedded package are the same files. The
+// pinned core's install checks refuse the full manifest, and they refuse it for each
+// pending field of kittest.Fields on its own: with every other pending field taken out,
+// each "check" field alone is still refused. Once the core accepts one, this fails and
+// names it, so the field leaves the list and the CLI check returns to CI.
+func TestPackageDirRefusedOnlyForPendingFields(t *testing.T) {
 	disk, err := modulekit.ReadDir("../../package")
 	if err != nil {
 		t.Fatal(err)
@@ -30,10 +33,19 @@ func TestPackageDirPassesTheCoreChecks(t *testing.T) {
 			t.Fatalf("%s differs between the package directory and the embedded package", p)
 		}
 	}
-	if _, _, err := modulekit.Check(disk); err != nil {
-		t.Skipf("needs %s: the pinned core refuses the manifest: %v", kittest.Items(), err)
+	if _, _, err := modulekit.Check(disk); err == nil {
+		t.Fatal("the pinned core accepts the full manifest: empty kittest.Fields and restore the togavsu-module check step in ci.yml")
 	}
-	raw, err := modulekit.Archive(disk)
+	for _, f := range kittest.Fields {
+		_, _, err := modulekit.Check(kittest.Only(disk, f))
+		switch {
+		case f.Stage == "check" && err == nil:
+			t.Errorf("the pinned core now accepts %s (%s): take it out of kittest.Fields", f.Field, f.Core)
+		case f.Stage == "approve" && err != nil:
+			t.Errorf("%s (%s) is refused at install, not at approval: %v", f.Field, f.Core, err)
+		}
+	}
+	raw, err := modulekit.Archive(kittest.Reduce(disk))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,4 +145,33 @@ func TestParseKey(t *testing.T) {
 	if _, err := packaging.ParseKey("not a key"); err == nil {
 		t.Fatal("accepted a bad key file")
 	}
+}
+
+// The core's settings source check over the module root. Environment reads are held to
+// it now: only internal/bootstrap reads the environment. Its numeric-literal rule is not
+// yet: on a module it reports ordinary idioms (an index compared with 0, len(x) == 1,
+// os.Args[1:], a strconv base, a status range, a byte offset), which the core passes only
+// through per-file allowlists for its own paths that a module cannot extend. That is
+// reported to the kit; until it is settled this skips, naming the count, rather than
+// contorting the code around the heuristic.
+func TestModuleSourceSettingsCheck(t *testing.T) {
+	err := modulekit.CheckSource("../..")
+	if err == nil {
+		return
+	}
+	var env, literals []string
+	for _, l := range strings.Split(err.Error(), "\n")[1:] {
+		switch {
+		case strings.Contains(l, "environment read"), strings.Contains(l, "dot-import"):
+			env = append(env, l)
+		case strings.Contains(l, "tunable"):
+			literals = append(literals, l)
+		default:
+			t.Errorf("unexpected finding: %s", l)
+		}
+	}
+	if len(env) > 0 {
+		t.Fatalf("environment read outside internal/bootstrap:\n%s", strings.Join(env, "\n"))
+	}
+	t.Skipf("kit: CheckSource reports %d numeric literals in ordinary module code (first: %s); the core passes the same rule only through its own path allowlists", len(literals), literals[0])
 }

@@ -1,9 +1,10 @@
 // Package kittest holds what the module's tests share on the core's public module kit:
 // the package files as the pinned core can install them, and throwaway signing keys.
 //
-// The manifest declares fields the spec's core changes add (container.system_mail,
-// device_connect, notifications, and the sidebar's icon, order, section and badge). A
-// core that lacks them refuses the whole manifest. Installable returns the package
+// The manifest declares fields and scopes the spec's core changes add
+// (container.system_mail, device_connect, notifications, the sidebar's icon, order,
+// section and badge, and the scopes module_secrets:write and mail:system). A core that
+// lacks them refuses the manifest at install or the permissions at approval. Installable returns the package
 // unchanged once the pinned core accepts it, and until then the package with exactly
 // those fields taken out, naming each with its CORE item, so the suites can drive
 // everything else on the real core. Only tests use it: the package command always
@@ -21,18 +22,39 @@ import (
 )
 
 // Pending is a manifest field the pinned core may lack, with the core change that adds
-// it.
+// it. Stage says where the pinned core refuses it: "check" in the package checks
+// (modulekit.Check, the install API), "approve" when the permissions are decided.
 type Pending struct {
 	Field string
 	Core  string
+	Stage string
+	drop  func(top string, ind int, line, key string) bool
 }
 
-// Fields lists the manifest fields this module declares from core changes.
+// Fields is the one list of the spec's pending manifest fields, each with its CORE item.
+// The package tests assert that the pinned core refuses each of them on its own and
+// accepts the package with all of them taken out, so the list fails loudly once the core
+// accepts any of them.
 var Fields = []Pending{
-	{"container.system_mail", "CORE-05"},
-	{"device_connect", "CORE-28"},
-	{"notifications", "CORE-03"},
-	{"sidebar.section, icon, order and badge", "CORE-08"},
+	{"container.system_mail", "CORE-05", "check", func(top string, ind int, _, key string) bool {
+		return top == "container" && ind > 0 && key == "system_mail"
+	}},
+	{"device_connect", "CORE-28", "check", func(top string, ind int, _, _ string) bool {
+		return ind == 0 && top == "device_connect"
+	}},
+	{"notifications", "CORE-03", "check", func(top string, ind int, _, _ string) bool {
+		return ind == 0 && top == "notifications"
+	}},
+	{"sidebar.section, subgroup, icon, order and badge", "CORE-08", "check", func(top string, ind int, line, key string) bool {
+		return top == "sidebar" && ind > 0 && !strings.HasPrefix(strings.TrimSpace(line), "- ") &&
+			(key == "section" || key == "subgroup" || key == "icon" || key == "order" || key == "badge")
+	}},
+	{"permission module_secrets:write", "CORE-06", "approve", func(top string, _ int, line, _ string) bool {
+		return top == "permissions" && strings.TrimSpace(line) == "- scope: module_secrets:write"
+	}},
+	{"permission mail:system", "CORE-05", "approve", func(top string, _ int, line, _ string) bool {
+		return top == "permissions" && strings.TrimSpace(line) == "- scope: mail:system"
+	}},
 }
 
 // Items is the CORE items of Fields, comma-separated.
@@ -79,8 +101,23 @@ func fieldNames() string {
 	return strings.Join(s, "; ")
 }
 
-// Reduce returns files with the manifest's core-change fields taken out.
-func Reduce(files map[string][]byte) map[string][]byte {
+// Reduce returns files with every field of Fields taken out of the manifest.
+func Reduce(files map[string][]byte) map[string][]byte { return Strip(files, Fields...) }
+
+// Only returns files with every field of Fields but keep taken out.
+func Only(files map[string][]byte, keep Pending) map[string][]byte {
+	var drop []Pending
+	for _, f := range Fields {
+		if f.Field != keep.Field {
+			drop = append(drop, f)
+		}
+	}
+	return Strip(files, drop...)
+}
+
+// Strip returns files with the given fields taken out of the manifest, each with
+// everything indented under it.
+func Strip(files map[string][]byte, fields ...Pending) map[string][]byte {
 	out := make(map[string][]byte, len(files))
 	for k, v := range files {
 		out[k] = v
@@ -97,20 +134,13 @@ func Reduce(files map[string][]byte) map[string][]byte {
 		key := strings.TrimPrefix(strings.TrimSpace(l), "- ")
 		key, _, _ = strings.Cut(key, ":")
 		drop := false
-		switch {
-		case ind == 0 && (top == "device_connect" || top == "notifications"):
-			drop = true
-		case top == "container" && ind > 0 && key == "system_mail":
-			drop = true
-		case top == "sidebar" && ind > 0 && !strings.HasPrefix(strings.TrimSpace(l), "- ") &&
-			(key == "section" || key == "subgroup" || key == "icon" || key == "order" || key == "badge"):
-			drop = true
+		for _, f := range fields {
+			drop = drop || f.drop(top, ind, l, key)
 		}
 		if !drop {
 			kept = append(kept, l)
 			continue
 		}
-		// Skip the field and everything indented under it.
 		for i+1 < len(lines) && strings.TrimSpace(lines[i+1]) != "" && indent(lines[i+1]) > ind {
 			i++
 		}

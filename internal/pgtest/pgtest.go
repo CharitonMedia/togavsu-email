@@ -12,10 +12,10 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 
+	"github.com/CharitonMedia/togavsu-email/internal/bootstrap"
 	"github.com/CharitonMedia/togavsu-email/internal/ids"
 	pkgfiles "github.com/CharitonMedia/togavsu-email/package"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -37,7 +37,7 @@ type DB struct {
 }
 
 func baseURL(t testing.TB) *url.URL {
-	raw := os.Getenv("TOGAVSU_TEST_DATABASE_URL")
+	raw := bootstrap.TestDatabaseURL()
 	if raw == "" {
 		t.Skip("TOGAVSU_TEST_DATABASE_URL is not set")
 	}

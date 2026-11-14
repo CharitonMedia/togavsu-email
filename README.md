@@ -64,7 +64,10 @@ internal/mailparse/        MIME parsing; internal/render/ the HTML sanitizer
 internal/oauth/            PKCE, token exchange and refresh
 internal/coreapi/          core API client
 internal/store/            mod_email reads and writes
-internal/packaging/        packaging and signing adapter (stub, see below)
+internal/packaging/        packaging and signing on the core's pkg/modulekit
+internal/bootstrap/        the only environment reads
+internal/kittest/          the pending manifest fields and throwaway test keys
+coresuite/                 acceptance suite on the real core (pkg/modulekit/coretest)
 internal/fakecore/         in-memory core for tests
 internal/pgtest/           scratch Postgres schema for tests
 internal/testmail/         synthetic messages, a test SMTP listener and test certs
@@ -75,24 +78,42 @@ package/                   togavsu-module.yaml and migrations 0001 to 0005
 ## Build and test
 
 ```
+gofmt -l .
 go vet ./...
-TOGAVSU_TEST_DATABASE_URL='postgres://postgres:pg@127.0.0.1:5432/postgres?sslmode=disable' go test ./...
+TOGAVSU_TEST_DATABASE_URL='postgres://postgres:pg@127.0.0.1:5432/postgres?sslmode=disable' go test -race -timeout 0 ./...
 docker build -t togavsu-email .
 ```
 
-The Postgres tests create and use only the `togavsu_email` database, one scratch
-`mod_email_<random>` schema per test; without `TOGAVSU_TEST_DATABASE_URL` they skip.
-No test reaches a real mail server or the network: the provider tests use the go-imap v2
-in-memory server, a local SMTP listener and `httptest` stand-ins of the Gmail and Graph
-APIs, all on 127.0.0.1, with certificates and tokens made at runtime; the acceptance
-tests at the repo root use the fake core and the fake mailbox set.
+The module requires the core (`github.com/CharitonMedia/togavsu`, pinned in go.mod) for
+`pkg/modulekit` and `pkg/modulekit/coretest`; no replace directive or go.work is used.
+
+The unit Postgres tests use one scratch `mod_email_<random>` schema per test in the
+`togavsu_email` database. `coresuite/` composes the real core with coretest: it installs
+the signed package (trusted key, install, approval on the Modules tab), serves the module
+in process with the token, webhook secret and database login the core handed over, and
+drives each acceptance criterion the pinned core supports. coretest makes and drops its
+own databases and roles. A criterion that needs a core item the pinned core lacks is
+written out and skipped with `needs CORE-NN`. Without `TOGAVSU_TEST_DATABASE_URL` the
+database tests skip.
+
+No test reaches a real mail server or the network: mail comes from the fake mailbox set,
+the go-imap v2 in-memory server, a local SMTP listener and `httptest` stand-ins of the
+Gmail and Graph APIs, all on 127.0.0.1, with keys, certificates and tokens made at
+runtime. The acceptance tests at the repo root still run on the fake core.
 
 ## Packaging and signing
 
-`email package` and `email.Build` go through `packaging.Default`, which waits on a
-public packaging and signing package or CLI from the core. The module doesn't copy the
-core's internal marketplace code, which would drift from what the core verifies; until
-the core publishes one, the package command says so and writes nothing.
+`email package -key <seed file> -out email.signed.json` builds the installable archive
+with `modulekit.Archive` and signs it with `modulekit.Build`; the key file holds a base64
+Ed25519 seed, and the command prints the public key to trust. The image digest in the
+manifest stays a placeholder. The package is checked with the core's own install checks
+first, so it signs only what the core would install.
+
+The manifest declares fields the spec's core changes add (listed once, with their CORE
+items, in `internal/kittest`). The pinned core refuses them, so `email package` refuses
+to sign for now; the tests install the package with those fields taken out and assert
+that the core refuses each of them, so they fail as soon as the core accepts one. The
+`togavsu-module check package` CI step returns when module-core lands.
 
 ## License
 

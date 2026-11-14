@@ -17,11 +17,26 @@ jobs:
           --health-interval 2s
           --health-retries 30
     env:
+      # The superuser URL: the unit suites make their own scratch schema, and the
+      # coretest suite (coresuite/) makes and drops its own databases and roles.
       TOGAVSU_TEST_DATABASE_URL: postgres://postgres:pg@127.0.0.1:5432/postgres?sslmode=disable
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: go vet ./...
-      - run: go test ./...
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: vet
+        if: ${{ !cancelled() }}
+        run: go vet ./...
+      - name: test
+        if: ${{ !cancelled() }}
+        # -timeout 0 turns off go test's default limit.
+        run: go test -race -timeout 0 ./...
+      # The package check step returns when module-core lands:
+      #   go run github.com/CharitonMedia/togavsu/cmd/togavsu-module check package
+      # Until then the pinned core refuses the spec's pending manifest fields, and
+      # internal/packaging's TestPackageDirRefusedOnlyForPendingFields checks the package
+      # dir instead (refused for exactly the fields in internal/kittest, accepted without
+      # them).

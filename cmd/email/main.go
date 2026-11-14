@@ -30,6 +30,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	email "github.com/CharitonMedia/togavsu-email"
+	"github.com/CharitonMedia/togavsu-email/internal/bootstrap"
 	"github.com/CharitonMedia/togavsu-email/internal/packaging"
 )
 
@@ -65,20 +66,13 @@ func optional(dir, name, fallback string) string {
 	return strings.TrimSpace(string(b))
 }
 
-func env(name, fallback string) string {
-	if v := os.Getenv(name); v != "" {
-		return v
-	}
-	return fallback
-}
-
 func serve(args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	listen := fs.String("listen", env("TOGAVSU_LISTEN", ":8080"), "address to listen on")
-	core := fs.String("core", env("TOGAVSU_CORE_URL", "http://core:8080"), "core base URL inside the stack")
+	listen := fs.String("listen", bootstrap.Env("TOGAVSU_LISTEN", ":8080"), "address to listen on")
+	core := fs.String("core", bootstrap.Env("TOGAVSU_CORE_URL", "http://core:8080"), "core base URL inside the stack")
 	dir := fs.String("secrets", "/run/secrets", "directory of Docker secrets")
-	host := fs.String("db-host", env("TOGAVSU_DB_HOST", "postgres:5432"), "Postgres host:port")
-	name := fs.String("db-name", env("TOGAVSU_DB_NAME", "togavsu"), "database name")
+	host := fs.String("db-host", bootstrap.Env("TOGAVSU_DB_HOST", "postgres:5432"), "Postgres host:port")
+	name := fs.String("db-name", bootstrap.Env("TOGAVSU_DB_NAME", "togavsu"), "database name")
 	_ = fs.Parse(args)
 	schema := optional(*dir, "togavsu_db_schema", "mod_email")
 	u := url.URL{Scheme: "postgres", User: url.UserPassword(secret(*dir, "togavsu_db_role"), secret(*dir, "togavsu_db_password")),

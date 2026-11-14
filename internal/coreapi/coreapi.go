@@ -67,10 +67,15 @@ func StatusOf(err error) int {
 // IsNotFound reports a core not_found answer.
 func IsNotFound(err error) bool { return StatusOf(err) == http.StatusNotFound }
 
-// IsScopeDenied reports a core scope_denied answer.
+// IsScopeDenied reports a refusal for a scope the module was not granted: code
+// scope_denied, as the contract names it, or the 403 forbidden "token is missing a
+// scope" the core's API routes answer it with (they map scope_denied to forbidden).
 func IsScopeDenied(err error) bool {
 	var e *Error
-	return errors.As(err, &e) && e.Code == "scope_denied"
+	if !errors.As(err, &e) {
+		return false
+	}
+	return e.Code == "scope_denied" || e.Status == http.StatusForbidden && e.Code == "forbidden" && strings.Contains(e.Detail, "missing a scope")
 }
 
 // Client calls the core with the module's token.
@@ -127,11 +132,15 @@ func (c *Client) Call(ctx context.Context, method, path string, a Auth, idem str
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		var p struct {
-			Code   string `json:"code"`
-			Detail string `json:"detail"`
+			Code    string `json:"code"`
+			Detail  string `json:"detail"`
+			Message string `json:"message"`
 		}
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 		_ = json.Unmarshal(raw, &p)
+		if p.Detail == "" {
+			p.Detail = p.Message
+		}
 		return &Error{Status: resp.StatusCode, Code: p.Code, Detail: p.Detail, Path: method + " " + strings.SplitN(path, "?", 2)[0]}
 	}
 	if out == nil {
