@@ -73,10 +73,9 @@ func (s *Server) getAccount(w http.ResponseWriter, r *http.Request, v Viewer) er
 func roleDefaults(a *store.Account) {
 	switch a.Role {
 	case "personal":
+		// Gmail adds the Togavsu/Filed label, Graph the category of that name, IMAP
+		// the Togavsu-Filed keyword; the message stays in its folder.
 		a.AfterFile, a.CanSend = "label", true
-		if a.Provider != "gmail" {
-			a.AfterFile = "move"
-		}
 	case "filing":
 		a.AfterFile, a.CanSend, a.PlusAddressing = "delete", true, true
 	case "court":

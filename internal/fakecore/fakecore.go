@@ -154,6 +154,8 @@ type Core struct {
 	// set) answer 500 once.
 	FailPublishAt int
 	publishes     int
+	// FailNotes makes the next n createNote calls answer 500.
+	FailNotes int
 	// ChunkSize is the upload chunk size the fake hands out.
 	ChunkSize int64
 	// Log is every call as "METHOD /path actor".
@@ -1079,6 +1081,11 @@ func (c *Core) createNote(w http.ResponseWriter, r *http.Request, a actor) {
 	}
 	if !c.writeMatter(a, req.MatterID) {
 		problem(w, 404, "not_found", "matter")
+		return
+	}
+	if c.FailNotes > 0 {
+		c.FailNotes--
+		problem(w, 500, "internal", "fake: note write failed")
 		return
 	}
 	n := &Note{ID: ids.Now(), MatterID: req.MatterID, Title: req.Title, Body: req.Body, Tags: req.Tags, CreatedBy: a.label}
