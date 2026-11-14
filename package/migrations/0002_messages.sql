@@ -30,6 +30,8 @@ CREATE TABLE messages (
   attempts INTEGER NOT NULL DEFAULT 0,
   next_attempt_at BIGINT,
   error TEXT NOT NULL DEFAULT '',
+  -- notice_sent: the unfiled_mail notifications for this row have gone out.
+  notice_sent BOOLEAN NOT NULL DEFAULT false,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
   UNIQUE (account_id, provider_ref)

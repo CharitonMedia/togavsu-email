@@ -122,6 +122,12 @@ type Config struct {
 	Token        *Token
 	// SaveToken stores a refreshed token set.
 	SaveToken func(ctx context.Context, t Token) error
+	// OAuth client for refreshing Token (the admin's settings).
+	ClientID, ClientSecret, Tenant string
+	// Endpoint overrides; tests point these at httptest servers on 127.0.0.1.
+	TokenURL, APIBase string
+	// XOAUTH2 signs IMAP and SMTP in with Token instead of Password.
+	XOAUTH2 bool
 }
 
 // skipNames is Unified's folder skip list.

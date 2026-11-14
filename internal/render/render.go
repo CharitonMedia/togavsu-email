@@ -211,3 +211,48 @@ func FileName(date time.Time, subject string) string {
 	}
 	return "email-" + date.UTC().Format("2006-01-02") + "-" + slug + ".html"
 }
+
+// Text reads the visible text of an HTML body, for a note when the message has no text
+// part.
+func Text(src string) string {
+	doc, err := nethtml.Parse(strings.NewReader(src))
+	if err != nil {
+		return ""
+	}
+	var b strings.Builder
+	var walk func(n *nethtml.Node)
+	walk = func(n *nethtml.Node) {
+		if n.Type == nethtml.ElementNode && (n.DataAtom == atom.Script || n.DataAtom == atom.Style || n.DataAtom == atom.Head) {
+			return
+		}
+		if n.Type == nethtml.TextNode {
+			b.WriteString(n.Data)
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+		if n.Type == nethtml.ElementNode {
+			switch n.DataAtom {
+			case atom.P, atom.Div, atom.Br, atom.Tr, atom.Li, atom.H1, atom.H2, atom.H3, atom.H4, atom.Table:
+				b.WriteString("\n")
+			}
+		}
+	}
+	walk(doc)
+	lines := strings.Split(b.String(), "\n")
+	var out []string
+	blank := false
+	for _, l := range lines {
+		l = strings.Join(strings.Fields(l), " ")
+		if l == "" {
+			if !blank && len(out) > 0 {
+				out = append(out, "")
+			}
+			blank = true
+			continue
+		}
+		blank = false
+		out = append(out, l)
+	}
+	return strings.TrimSpace(strings.Join(out, "\n"))
+}

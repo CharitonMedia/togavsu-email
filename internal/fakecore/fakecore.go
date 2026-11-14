@@ -121,8 +121,9 @@ type grant struct {
 }
 
 type saved struct {
-	status int
-	body   []byte
+	status  int
+	body    []byte
+	bodySum string
 }
 
 // Core is the fake.
@@ -415,9 +416,18 @@ func (c *Core) op(scopes []string, modes string, f opFunc) http.HandlerFunc {
 			f(w, r, a)
 			return
 		}
-		ik := r.Method + " " + r.URL.Path + " " + key
+		// The core scopes a key to the caller and route, and refuses the same key with a
+		// different body (internal/modules/http.go, write).
+		raw, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(bytes.NewReader(raw))
+		ik := a.label + " " + r.Method + " " + r.URL.Path + " " + key
 		if s, ok := c.idem[ik]; ok {
+			if s.bodySum != sum(raw) {
+				problem(w, 409, "idempotency_conflict", "this Idempotency-Key was used with a different body")
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Idempotent-Replay", "true")
 			w.WriteHeader(s.status)
 			_, _ = w.Write(s.body)
 			return
@@ -425,7 +435,7 @@ func (c *Core) op(scopes []string, modes string, f opFunc) http.HandlerFunc {
 		rec := httptest.NewRecorder()
 		f(rec, r, a)
 		if rec.Code < 500 {
-			c.idem[ik] = saved{rec.Code, rec.Body.Bytes()}
+			c.idem[ik] = saved{rec.Code, rec.Body.Bytes(), sum(raw)}
 		}
 		for k, v := range rec.Header() {
 			w.Header()[k] = v

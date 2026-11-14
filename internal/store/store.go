@@ -307,7 +307,7 @@ func (s *Store) ClaimUnfiledNotice(ctx context.Context, userID string, gap time.
 	now := s.ms()
 	res, err := s.DB.ExecContext(ctx, `INSERT INTO user_prefs (user_id, unfiled_notified_at) VALUES ($1, $2)
 ON CONFLICT (user_id) DO UPDATE SET unfiled_notified_at = EXCLUDED.unfiled_notified_at
-WHERE user_prefs.unfiled_notified_at <= $3`, userID, now, now-gap.Milliseconds())
+WHERE user_prefs.unfiled_notified_at IS NULL OR user_prefs.unfiled_notified_at <= $3`, userID, now, now-gap.Milliseconds())
 	if err != nil {
 		return false, err
 	}
@@ -369,14 +369,16 @@ type Message struct {
 	// FolderKind is the stored folder's kind (joined), when known.
 	FolderKind string `json:"folder_kind,omitempty"`
 	// Role and OwnerUserID are the account's (joined).
-	Role        string `json:"account_role"`
-	OwnerUserID string `json:"-"`
+	Role             string `json:"account_role"`
+	OwnerUserID      string `json:"-"`
+	AccountCreatedBy string `json:"-"`
+	AccountAddress   string `json:"account_address"`
 }
 
 const messageCols = `m.id, m.account_id, COALESCE(m.folder_id, ''), m.provider_ref, m.rfc_message_id, m.thread_key, m.in_reply_to, m.reference_ids,
 m.direction, m.from_header, m.from_addr, m.to_addrs, m.cc_addrs, m.delivered_to, m.subject, m.sent_at, m.received_at, m.snippet, m.body_text,
 m.body_html, m.raw_sha256, m.raw_size, m.unread, m.status, m.match_reason, m.ai_declined, m.attempts, m.next_attempt_at, m.error, m.created_at,
-COALESCE(f.kind, ''), a.role, COALESCE(a.owner_user_id, '')`
+COALESCE(f.kind, ''), a.role, COALESCE(a.owner_user_id, ''), a.created_by, a.address`
 
 const messageFrom = ` FROM messages m JOIN accounts a ON a.id = m.account_id LEFT JOIN folders f ON f.id = m.folder_id `
 
@@ -386,7 +388,7 @@ func scanMessage(r scanner) (Message, error) {
 	err := r.Scan(&m.ID, &m.AccountID, &m.FolderID, &m.ProviderRef, &m.RFCMessageID, &m.ThreadKey, &m.InReplyTo, arr(&m.ReferenceIDs),
 		&m.Direction, &m.FromHeader, &m.FromAddr, arr(&m.ToAddrs), arr(&m.CcAddrs), &m.DeliveredTo, &m.Subject, &sent, &m.ReceivedAt, &m.Snippet,
 		&m.BodyText, &m.BodyHTML, &m.RawSHA256, &m.RawSize, &m.Unread, &m.Status, &m.MatchReason, &m.AIDeclined, &m.Attempts, &next, &m.Error,
-		&m.CreatedAt, &m.FolderKind, &m.Role, &m.OwnerUserID)
+		&m.CreatedAt, &m.FolderKind, &m.Role, &m.OwnerUserID, &m.AccountCreatedBy, &m.AccountAddress)
 	if errors.Is(err, sql.ErrNoRows) {
 		return m, ErrNotFound
 	}
@@ -517,6 +519,26 @@ func (s *Store) Retry(ctx context.Context, id string, attempts int, next *int64,
 // DueRetries lists pending rows of an account whose next attempt is due.
 func (s *Store) DueRetries(ctx context.Context, accountID string) ([]Message, error) {
 	return s.messages(ctx, ` WHERE m.account_id = $1 AND m.status = 'pending' AND m.next_attempt_at IS NOT NULL AND m.next_attempt_at <= $2 ORDER BY m.created_at`, accountID, s.ms())
+}
+
+// PausedRows lists rows a paused account matched but did not file.
+func (s *Store) PausedRows(ctx context.Context, accountID string) ([]Message, error) {
+	return s.messages(ctx, ` WHERE m.account_id = $1 AND m.status = 'pending' AND m.match_reason = 'paused' ORDER BY m.received_at`, accountID)
+}
+
+// NewUnfiled lists queue rows whose unfiled_mail notices have not gone out.
+func (s *Store) NewUnfiled(ctx context.Context) ([]Message, error) {
+	return s.messages(ctx, ` WHERE m.status = 'unfiled' AND NOT m.notice_sent AND a.status <> 'removed' ORDER BY m.received_at`)
+}
+
+// MarkUnfiledNotified stamps rows whose notices went out.
+func (s *Store) MarkUnfiledNotified(ctx context.Context, rows []Message) error {
+	var ids []string
+	for _, m := range rows {
+		ids = append(ids, m.ID)
+	}
+	_, err := s.DB.ExecContext(ctx, `UPDATE messages SET notice_sent = true WHERE id = ANY($1)`, ids)
+	return err
 }
 
 // Unfiled lists every row waiting in the queue for a re-match.

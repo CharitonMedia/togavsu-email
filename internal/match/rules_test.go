@@ -150,12 +150,12 @@ func TestThread(t *testing.T) {
 func TestDefaultPatterns(t *testing.T) {
 	ps := ParsePatterns("")
 	cases := map[string][]string{
-		"Notice of filing in 26AB-CV00123 Doe v. Roe":         {"26AB-CV00123"},
-		"Case 26AB-CV00123-01 Order entered":                  {"26AB-CV00123-01"},
-		"Appeal ED112345 filed":                               {"ED112345"},
-		"Trial 24SL-CC01234 and appeal WD87654 both listed":   {"24SL-CC01234"},
-		"Supreme Court SC100123":                              {"SC100123"},
-		"Nothing here but 2026-0042":                          nil,
+		"Notice of filing in 26AB-CV00123 Doe v. Roe":        {"26AB-CV00123"},
+		"Case 26AB-CV00123-01 Order entered":                 {"26AB-CV00123-01"},
+		"Appeal ED112345 filed":                              {"ED112345"},
+		"Trial 24SL-CC01234 and appeal WD87654 both listed":  {"24SL-CC01234"},
+		"Supreme Court SC100123":                             {"SC100123"},
+		"Nothing here but 2026-0042":                         nil,
 		"Lower case 26ab-cv00123 is not a filed case number": nil,
 	}
 	for text, want := range cases {
